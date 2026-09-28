@@ -1,0 +1,15 @@
+# Build output
+bin/
+obj/
+.vs/
+*.user
+*.suo
+Thumbs.db
+
+# The VB6 side of RunTime (the original Aqua controls, a copy, compiled .ocx files, VB6 tests and type
+# libraries): not in this repository, which holds the .NET port (Aqua.Net) and what builds with it
+/Aqua/
+/Aqua_ym/
+/Compilete/
+/Test/
+/Tlb/

@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="../Aqua.Net/Aqua.Net.vbproj" />
+  <Project Path="Aqua.Net.Tests.vbproj" />
+  <Project Path="C:/Hospital.NET/HE.V2/EXAM/Shared_Source_Net8/Unimax.DocumentConvert/Unimax.DocumentConvert.vbproj" />
+</Solution>

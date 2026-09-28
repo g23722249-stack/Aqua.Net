@@ -1,0 +1,172 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net35;net8.0-windows</TargetFrameworks>
+    <RootNamespace>Aqua</RootNamespace>
+    <AssemblyName>Aqua.Net</AssemblyName>
+    <OptionStrict>On</OptionStrict>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>On</OptionInfer>
+    <OptionCompare>Binary</OptionCompare>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Company>TechnoSoft</Company>
+    <Product>Aqua Control Technical (.NET)</Product>
+    <Description>TechnoSoft - Aqua Control Technical, ported to WinForms (net35 / net8).</Description>
+  </PropertyGroup>
+
+  <!-- .NET 8 (Windows) uses the Desktop SDK's WinForms switch. -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <!-- Image resources carved from the VB6 frx/ctx binaries, preserved verbatim.
+       Explicit LogicalName keeps the manifest names stable across net35/net8. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\CheckMarks\*.ico">
+      <LogicalName>Aqua.CheckMarks.%(Filename).ico</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Grid\*.bmp">
+      <LogicalName>Aqua.GridRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Headers\*.bmp">
+      <LogicalName>Aqua.HeaderRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Headers\*.ico">
+      <LogicalName>Aqua.HeaderRes.%(Filename).ico</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\ScrollBar\*.bmp">
+      <LogicalName>Aqua.ScrollRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\ScrollBar\*.ico">
+      <LogicalName>Aqua.ScrollRes.%(Filename).ico</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Spin\*.bmp">
+      <LogicalName>Aqua.SpinRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Spin\*.ico">
+      <LogicalName>Aqua.SpinRes.%(Filename).ico</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\PageHead\*.bmp">
+      <LogicalName>Aqua.PageHeadRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\PageSheet\*.bmp">
+      <LogicalName>Aqua.PageSheetRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Label\*.bmp">
+      <LogicalName>Aqua.LabelRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\iTextBox\*.bmp">
+      <LogicalName>Aqua.ITextBoxRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Panel\*.bmp">
+      <LogicalName>Aqua.PanelRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Loading\*.bmp">
+      <LogicalName>Aqua.LoadingRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Slider\*.bmp">
+      <LogicalName>Aqua.SliderRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\ProgressBar\*.bmp">
+      <LogicalName>Aqua.ProgressBarRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\TimeLine\*.bmp">
+      <LogicalName>Aqua.TimeLineRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Buttons\*.bmp">
+      <LogicalName>Aqua.ButtonsRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\FlashButton\*.bmp">
+      <LogicalName>Aqua.FlashButtonRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Menu\*.bmp">
+      <LogicalName>Aqua.MenuRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\FormChrome\*.bmp">
+      <LogicalName>Aqua.FormChromeRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\DropDownList\*.bmp">
+      <LogicalName>Aqua.DropDownListRes.%(Filename).bmp</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="ExamControls\cRichTextBox\**" />
+    <EmbeddedResource Remove="ExamControls\cRichTextBox\**" />
+    <None Remove="ExamControls\cRichTextBox\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="ExamControls\ARichTextBox.Designer.vb" />
+    <Compile Remove="ExamControls\ARichTextBox.vb" />
+    <Compile Remove="ExamControls\RichEdit.Designer.vb" />
+    <Compile Remove="ExamControls\RichEdit.vb" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Remove="ExamControls\ARichTextBox.resx" />
+    <EmbeddedResource Remove="ExamControls\RichEdit.resx" />
+  </ItemGroup>
+
+  <!-- Project-level VB imports the migrated ExamControls source relies on (they had these
+       as global <Import> in the original Unimax.ExamControls project). -->
+  <ItemGroup>
+    <Import Include="System.Drawing" />
+    <Import Include="System.Windows.Forms" />
+  </ItemGroup>
+
+  <!-- Migrated Unimax.ExamControls (kept in the Unimax.ExamControls namespace). The .vb
+       are auto-included by the SDK; the .resx need explicit LogicalName so each form/control
+       finds its resources by its real (namespace-qualified) type name at runtime. -->
+  <ItemGroup>
+    <EmbeddedResource Update="ExamControls\frmResource.resx">
+      <LogicalName>Aqua.frmResource.resources</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Update="ExamControls\CheckBox.resx">
+      <LogicalName>Aqua.CheckBox.resources</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Update="ExamControls\RadioButton.resx">
+      <LogicalName>Aqua.RadioButton.resources</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Update="ExamControls\RatingControl.resx">
+      <LogicalName>Aqua.RatingControl.resources</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Update="ExamControls\MediaItem.resx">
+      <LogicalName>Aqua.MediaItem.resources</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Update="ExamControls\MediaList.resx">
+      <LogicalName>Aqua.MediaList.resources</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Update="ExamControls\MediaViewerControl.resx">
+      <LogicalName>Aqua.MediaViewerControl.resources</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- MediaViewerControl: net8 plays video via LibVLCSharp; net35 via Windows Media Player COM. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+    <PackageReference Include="LibVLCSharp" Version="3.9.3" />
+    <PackageReference Include="LibVLCSharp.WinForms" Version="3.9.3" />
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.21" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net35'">
+    <Reference Include="AxInterop.WMPLib">
+      <HintPath>Interop\AxInterop.WMPLib.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Interop.WMPLib">
+      <HintPath>Interop\Interop.WMPLib.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- .NET Framework 3.5: reference WinForms/Drawing explicitly and supply the
+       reference assemblies via NuGet so the project builds without Visual Studio. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net35'">
+    <Reference Include="System" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Design" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net35" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+
+</Project>

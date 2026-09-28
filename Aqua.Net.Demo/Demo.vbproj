@@ -1,0 +1,51 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFrameworks>net35;net8.0-windows</TargetFrameworks>
+    <RootNamespace>AquaDemo</RootNamespace>
+    <MyType>WindowsForms</MyType>
+    <StartupObject>AquaDemo.Form1</StartupObject>
+    <Nullable>disable</Nullable>
+
+    <!-- WinForms -->
+    <UseWindowsForms>true</UseWindowsForms>
+
+  </PropertyGroup>
+
+  <!-- .NET 8 (Windows) uses the Desktop SDK's WinForms switch. -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <!-- .NET Framework 3.5: reference WinForms/Drawing explicitly + reference assemblies. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net35'">
+    <Reference Include="System" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net35" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Project reference (not a HintPath to a built DLL) so the demo always links the
+         freshly built Aqua.Net; avoids stale-DLL and wrong-target issues. -->
+    <ProjectReference Include="..\Aqua.Net\Aqua.Net.vbproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Update="My Project\Resources.Designer.vb">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Update="My Project\Resources.resx">
+      <CustomToolNamespace>My.Resources</CustomToolNamespace>
+      <Generator>VbMyResourcesResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.vb</LastGenOutput>
+    </EmbeddedResource>
+  </ItemGroup>
+</Project>
