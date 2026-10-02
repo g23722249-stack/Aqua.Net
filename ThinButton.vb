@@ -14,9 +14,10 @@ Imports System.Windows.Forms
 '   neither (ExitFocus)   -> the image faded to ExitFocusOpacity (60%)
 '   pressed               -> the image slightly darkened
 '   disabled              -> the image in grey scale, also faded
-' Like Aqua.Button the window is truly transparent (WS_EX_TRANSPARENT, no background painted), so
-' every repaint first has the parent repaint the area behind it; otherwise the faded image would be
-' drawn over its previous self and lose its fade.
+' The background is transparent the WinForms way (BackColor Transparent): every repaint first paints
+' the parent behind the button, so the faded image is never drawn over its previous self. (Not
+' WS_EX_TRANSPARENT like Aqua.Button: beside a WS_EX_COMPOSITED Aqua.TabControl that kept the window
+' repainting without end.)
 ' Events match FlashButton so the two can replace each other: Click fires 80 ms after the pressed
 ' face shows (also for Enter/Space), MousePress first fires after 1 s held then every 100 ms with
 ' the modifier bits, MouseHover waits HoverInterval. ColorChanged is declared only for that swap --
@@ -29,6 +30,9 @@ Namespace Global.Aqua
 
         Private Const PressedBrightness As Single = 0.85F
         Private Const ExitFocusOpacity As Single = 0.6F
+        ' Not FlashButton's gc_lngDisableForeColor (189,190,189): on the grey-scaled, faded image that
+        ' light grey all but vanished.
+        Private Shared ReadOnly DisabledForeColor As Color = Color.FromArgb(128, 128, 128)
 
         Private _image As Image
         Private _hoverInterval As Integer = 100
@@ -135,24 +139,13 @@ Namespace Global.Aqua
         '=====================================================================
         ' Painting
         '=====================================================================
-        ' WS_EX_TRANSPARENT: the area left unpainted shows what is behind (parent image, siblings)
-        Protected Overrides ReadOnly Property CreateParams As CreateParams
-            Get
-                Const WS_EX_TRANSPARENT As Integer = &H20
-                Dim cp As CreateParams = MyBase.CreateParams
-                cp.ExStyle = cp.ExStyle Or WS_EX_TRANSPARENT
-                Return cp
-            End Get
-        End Property
+        ' BackColor Transparent: WinForms paints the parent (its background and its own painting)
+        ' behind the button on every repaint, so the faded image is never drawn over the previous frame.
+        ' Not WS_EX_TRANSPARENT: next to a WS_EX_COMPOSITED control (Aqua.TabControl) that made the
+        ' window repaint the TabControl without end (frmSetup stayed blank, one CPU core busy).
 
-        ' no background -> the window stays transparent
-        Protected Overrides Sub OnPaintBackground(e As PaintEventArgs)
-        End Sub
-
-        ''' <summary>Repaints the parent behind the button first, so the (faded) image is never drawn
-        ''' over the previous frame.</summary>
+        ''' <summary>Repaints the button (the parent behind it comes with it, see above).</summary>
         Private Sub RefreshTransparent()
-            If Parent IsNot Nothing Then Parent.Invalidate(Bounds, True)
             Invalidate()
         End Sub
 
@@ -167,7 +160,7 @@ Namespace Global.Aqua
             End If
 
             If Not String.IsNullOrEmpty(Text) Then
-                Dim fc As Color = If(Enabled, ForeColor, ColorUtil.OleToColor(12435133))   ' gc_lngDisableForeColor
+                Dim fc As Color = If(Enabled, ForeColor, DisabledForeColor)
                 TextRenderer.DrawText(g, Text, Font, ClientRectangle, fc,
                                       TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or TextFormatFlags.SingleLine)
             End If
