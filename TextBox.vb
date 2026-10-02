@@ -32,6 +32,7 @@ Namespace Global.Aqua
         Private Const BorderInset As Integer = 4   ' gc_intKeepBorderSize
         Private Const ShadowInset As Integer = 1   ' gc_intTextBoxShadowHeight
         Private Const ScrollThickness As Integer = 18   ' matches Aqua.ScrollBar's own thumb thickness
+        Private Const EditBorderClear As Integer = 3   ' the border DrawThemedBorder paints on each side
 
         Private ReadOnly _edit As New System.Windows.Forms.TextBox()
         Private ReadOnly _vScroll As New Aqua.ScrollBar()
@@ -555,6 +556,18 @@ Namespace Global.Aqua
             Dim left As Integer = BorderInset
             Dim w As Integer = Math.Max(0, Width - BorderInset * 2)
             Dim h As Integer = Math.Max(0, Height - BorderInset * 2 - ShadowInset)
+
+            If Not _multiline Then
+                ' A single-line edit sizes itself to its font and ignores h (華康細圓體 14.25pt: 19 px in
+                ' a 15 px slot), so at the usual 24..27 px it ran over the bottom border. Centre it
+                ' instead, kept off the 3 px border (DrawThemedBorder); when even that is too short
+                ' it is cut to fit rather than drawn over the border.
+                Dim room As Integer = Math.Max(0, Height - EditBorderClear * 2)
+                Dim fit As Integer = _edit.PreferredHeight
+                _edit.AutoSize = fit <= room
+                h = Math.Min(fit, room)
+                top = EditBorderClear + (room - h) \ 2
+            End If
 
             _edit.SetBounds(left, top, w, h)
             _edit.Visible = True
