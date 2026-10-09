@@ -353,17 +353,17 @@ Namespace Global.Aqua
         Private Sub DrawTab(g As Graphics, ByVal index As Integer, ByVal rect As Rectangle)
             If rect.Width <= 0 OrElse rect.Height <= 0 Then Return
             Dim selected As Boolean = (index = _selIndex)
-            Dim surf As Image = PageResources.GetTabSurface(_alignment, _color, selected)
+            Dim surf As Image = Theme.Skin(PageResources.GetTabSurface(_alignment, _color, selected))
             If surf IsNot Nothing Then Skin.DrawStretch(g, surf, rect, IsHorizontalTabs)
 
             Dim flags As TextFormatFlags = TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or
                                            TextFormatFlags.SingleLine Or TextFormatFlags.EndEllipsis
-            TextRenderer.DrawText(g, _tabPages(index).Title, Font, rect, ForeColor, flags)
+            TextRenderer.DrawText(g, _tabPages(index).Title, Font, rect, If(Theme.Dark, Theme.TextColor, ForeColor), flags)
         End Sub
 
         Private Sub DrawContentBorder(g As Graphics, ByVal rect As Rectangle)
             If rect.Width <= 2 OrElse rect.Height <= 2 Then Return
-            Dim baseColor As Color = ColorUtil.OleToColor(12434877)   ' gc_lngBorderColor RGB(189,189,189)
+            Dim baseColor As Color = Theme.Map(ColorUtil.OleToColor(12434877))   ' gc_lngBorderColor RGB(189,189,189)
             Using p As New Pen(baseColor, 2)
                 g.DrawRectangle(p, rect.Left + 1, rect.Top + 1, rect.Width - 2, rect.Height - 2)
             End Using
@@ -400,6 +400,16 @@ Namespace Global.Aqua
         ''' <summary>Selects the tab whose head is under <paramref name="clientPt"/>; False when there
         ''' is none. Also used by AquaTabControlDesigner: the designer doesn't pass clicks on to
         ''' OnMouseDown, even where GetHitTest says the header is "live".</summary>
+        ''' <summary>The index of the tab whose head is under <paramref name="clientPt"/>; -1 when there is none
+        ''' (e.g. to show a different help text for each tab).</summary>
+        Public Function TabIndexAt(ByVal clientPt As Point) As Integer
+            Dim rects As Rectangle() = TabRects()
+            For i = 0 To rects.Length - 1
+                If rects(i).Contains(clientPt) Then Return i
+            Next
+            Return -1
+        End Function
+
         Friend Function SelectTabAt(ByVal clientPt As Point) As Boolean
             Dim rects As Rectangle() = TabRects()
             For i = 0 To rects.Length - 1

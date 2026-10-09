@@ -399,6 +399,14 @@ Namespace Global.Aqua
             Return If(MenuBarVisible, TextRenderer.MeasureText("Ag", _menuFont).Height + 6, 0)
         End Function
 
+        ''' <summary>
+        ''' 只重畫標題列與選單列（開關選單、滑過選單、視窗啟用／停用只影響這裡）。
+        ''' 整個視窗 Invalidate 會連內容區的背景一起清掉重畫，多文件時下面的子視窗看起來會閃。
+        ''' </summary>
+        Private Sub InvalidateChrome()
+            Invalidate(New Rectangle(0, 0, Width, TitleBarHeight + MenuBarHeight()))
+        End Sub
+
         Private Function TitleBarRect() As Rectangle
             Return New Rectangle(0, 0, Width, TitleBarHeight)
         End Function
@@ -460,7 +468,7 @@ Namespace Global.Aqua
                 DrawContent(g)
                 DrawBorder(g)
                 If _borderStyle = Aqua.FormBorderStyle.Sizable Then
-                    Dim grip As Image = FormChromeResources.GetSizeGrip()
+                    Dim grip As Image = Theme.Skin(FormChromeResources.GetSizeGrip())
                     If grip IsNot Nothing Then g.DrawImage(grip, ResizeGripRect())
                 End If
             End Using
@@ -469,7 +477,7 @@ Namespace Global.Aqua
         End Sub
 
         Private Sub DrawTitleBar(ByVal g As Graphics, ByVal active As Boolean)
-            Dim bar As Image = FormChromeResources.GetTitleBar(active)
+            Dim bar As Image = Theme.Skin(FormChromeResources.GetTitleBar(active))
             Dim tr As Rectangle = TitleBarRect()
             If bar IsNot Nothing Then
                 Skin.DrawStretch(g, bar, tr, horizontal:=True)
@@ -488,7 +496,7 @@ Namespace Global.Aqua
             If _titleIcon IsNot Nothing Then
                 g.DrawImage(_titleIcon, New Rectangle(titleX - 6 - _titleIcon.Width, (TitleBarHeight - _titleIcon.Height) \ 2, _titleIcon.Width, _titleIcon.Height))
             End If
-            Dim titleColor As Color = If(active, ForeColor, ColorUtil.OleToColor(&H808080))
+            Dim titleColor As Color = If(active, If(Theme.Dark, Theme.TextColor, ForeColor), Theme.Map(ColorUtil.OleToColor(&H808080)))
             ChromeText.DrawCentered(g, Text, _titleFont, New Rectangle(0, 0, Width, TitleBarHeight), titleColor)   ' smoothed (see ChromeText)
         End Sub
 
@@ -500,7 +508,7 @@ Namespace Global.Aqua
 
         Private Sub DrawMenuBar(ByVal g As Graphics)
             Dim mr As Rectangle = MenuBarRect()
-            Dim bg As Image = MenuResources.GetBackground()
+            Dim bg As Image = Theme.Skin(MenuResources.GetBackground())
             If bg IsNot Nothing Then
                 Skin.DrawStretch(g, bg, mr, horizontal:=False)
             Else
@@ -508,7 +516,7 @@ Namespace Global.Aqua
                     g.FillRectangle(b, mr)
                 End Using
             End If
-            Using p As New Pen(Color.FromArgb(165, 166, 165), 2)
+            Using p As New Pen(Theme.Map(Color.FromArgb(165, 166, 165)), 2)
                 g.DrawLine(p, 0, mr.Bottom, Width, mr.Bottom)
             End Using
 
@@ -541,7 +549,7 @@ Namespace Global.Aqua
                         End Using
                     End If
                 End If
-                Dim fc As Color = If(i = _openMenuIndex OrElse i = _hoverMenuIndex, Color.White, ForeColor)
+                Dim fc As Color = If(i = _openMenuIndex OrElse i = _hoverMenuIndex, Color.White, If(Theme.Dark, Theme.TextColor, ForeColor))
                 ChromeText.DrawCentered(g, item.Text, _menuFont, rect, fc)   ' smoothed (see ChromeText); widths still from TextRenderer
                 x += rect.Width
             Next
@@ -569,7 +577,7 @@ Namespace Global.Aqua
         Private Sub DrawBorder(ByVal g As Graphics)
             ' See iForm.vb's DrawBorder for why Width-1/Height-1 (not Width/Height) here.
             Using path As Drawing2D.GraphicsPath = RegionUtil.CreateObtusenessPath(ObtusenessMode.Top, Width - 1, Height - 1, CornerRadius)
-                Using p As New Pen(Color.FromArgb(148, 150, 148), 1)
+                Using p As New Pen(Theme.Map(Color.FromArgb(148, 150, 148)), 1)
                     g.DrawPath(p, path)
                 End Using
             End Using
@@ -670,7 +678,7 @@ Namespace Global.Aqua
             End If
             CloseOpenMenu()
             _openMenuIndex = index
-            Invalidate()
+            InvalidateChrome()
             RaiseEvent MenuOpen(Me, EventArgs.Empty)
 
             _openPopup = New MenuPopupForm()
@@ -696,7 +704,7 @@ Namespace Global.Aqua
             End If
             If _openMenuIndex >= 0 Then
                 _openMenuIndex = -1
-                Invalidate()
+                InvalidateChrome()
                 RaiseEvent MenuClose(Me, EventArgs.Empty)
             End If
         End Sub
@@ -729,14 +737,14 @@ Namespace Global.Aqua
             If _maxButton AndAlso ControlBoxRect(FormControlBox.Maximize).Contains(e.Location) Then newHoverBox = FormControlBox.Maximize
             If newHoverBox <> _hoverBox Then
                 _hoverBox = newHoverBox
-                Invalidate()
+                InvalidateChrome()
             End If
 
             If MenuBarVisible Then
                 Dim idx As Integer = MenuIndexAt(e.Location)
                 If idx <> _hoverMenuIndex Then
                     _hoverMenuIndex = idx
-                    Invalidate()
+                    InvalidateChrome()
                     If idx >= 0 AndAlso _openMenuIndex >= 0 AndAlso _openMenuIndex <> idx Then ToggleMenu(idx)
                 End If
             End If
@@ -760,7 +768,7 @@ Namespace Global.Aqua
             _hoverTimer.Stop()
             If _hoverBox.HasValue Then
                 _hoverBox = Nothing
-                Invalidate()
+                InvalidateChrome()
             End If
             SoundUtil.PlaySound(_soundMouseLeave)
         End Sub
@@ -786,7 +794,7 @@ Namespace Global.Aqua
 
         Protected Overrides Sub OnActivated(e As EventArgs)
             MyBase.OnActivated(e)
-            Invalidate()
+            InvalidateChrome()
         End Sub
 
         Protected Overrides Sub OnDeactivate(e As EventArgs)
@@ -796,7 +804,7 @@ Namespace Global.Aqua
             ' that would close the menu the instant it opens. The popup's own activation-chain
             ' logic (MenuPopupForm.OnDeactivate) already closes it when focus genuinely leaves the
             ' whole menu system, and notifies us via AutoClosed (see ToggleMenu) to reconcile.
-            Invalidate()
+            InvalidateChrome()
         End Sub
 
         Protected Overrides Sub OnTextChanged(e As EventArgs)

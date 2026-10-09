@@ -43,7 +43,7 @@ Namespace Global.Aqua
         End Property
 
         Protected Overrides Sub OnPaintBackground(e As PaintEventArgs)
-            Dim bg As Image = PageResources.GetSheetBackground()
+            Dim bg As Image = Theme.Skin(PageResources.GetSheetBackground())
             If bg IsNot Nothing Then
                 ' tile the texture to fill (not stretch)
                 Using tb As New TextureBrush(bg, Drawing2D.WrapMode.Tile)

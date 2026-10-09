@@ -39,6 +39,11 @@ Namespace Global.Aqua
         Private _hoverBox As FormControlBox? = Nothing
         Private _lastWindowState As FormWindowState = FormWindowState.Normal
 
+        ' last title-bar press, for double-click detection (see IsTitleDoubleClick)
+        Private _titleClickTick As Integer
+        Private _titleClickScreen As Point
+        Private _titleClickValid As Boolean = False
+
         Private _mouseEnter As Boolean = False
         Private _hover As Boolean = False
         Private ReadOnly _hoverTimer As New Timer()
@@ -482,6 +487,12 @@ Namespace Global.Aqua
             End If
 
             If TitleBarRect().Contains(e.Location) Then
+                ' double-click on the title maximizes / restores, like a native caption (only
+                ' when the window has a maximize button, same as Windows)
+                If _maxButton AndAlso IsTitleDoubleClick(e) Then
+                    WindowState = If(WindowState = FormWindowState.Maximized, FormWindowState.Normal, FormWindowState.Maximized)
+                    Return
+                End If
                 SoundUtil.PlaySound(_soundClick)
                 NativeWindowDrag.BeginDragMove(Handle)
                 Return
@@ -494,6 +505,30 @@ Namespace Global.Aqua
                 _pressTimer.Start()
             End If
         End Sub
+
+        ''' <summary>Whether this title-bar press completes a double-click. Tracked by hand because the
+        ''' first press goes into the OS move loop (BeginDragMove), which swallows the button-up, so
+        ''' WinForms doesn't reliably report the second press as a double-click (e.Clicks = 2).
+        ''' Uses the system double-click time and distance; a recognised double-click resets the
+        ''' tracking so a third press starts over instead of toggling again.</summary>
+        Private Function IsTitleDoubleClick(ByVal e As MouseEventArgs) As Boolean
+            Dim now As Integer = Environment.TickCount
+            Dim pt As Point = PointToScreen(e.Location)
+            Dim area As Size = SystemInformation.DoubleClickSize
+            Dim isDouble As Boolean = e.Clicks >= 2 OrElse
+                (_titleClickValid AndAlso
+                 now - _titleClickTick <= SystemInformation.DoubleClickTime AndAlso
+                 Math.Abs(pt.X - _titleClickScreen.X) <= area.Width \ 2 AndAlso
+                 Math.Abs(pt.Y - _titleClickScreen.Y) <= area.Height \ 2)
+            If isDouble Then
+                _titleClickValid = False
+            Else
+                _titleClickValid = True
+                _titleClickTick = now
+                _titleClickScreen = pt
+            End If
+            Return isDouble
+        End Function
 
         Protected Overrides Sub OnMouseUp(e As MouseEventArgs)
             MyBase.OnMouseUp(e)
