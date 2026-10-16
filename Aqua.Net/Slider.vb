@@ -275,7 +275,7 @@ Namespace Global.Aqua
         Protected Overrides Sub OnPaint(e As PaintEventArgs)
             Dim g As Graphics = e.Graphics
 
-            Dim groove As Image = SliderResources.GetBackground(_orientation)
+            Dim groove As Image = Theme.Skin(SliderResources.GetBackground(_orientation))
             If groove IsNot Nothing Then
                 If IsHorizontal Then
                     Dim y As Integer = (Height - groove.Height) \ 2
@@ -297,7 +297,7 @@ Namespace Global.Aqua
             Dim span As Integer = _max - _min
             If span <= 0 Then Return
             Dim ts As Size = ThumbSize()
-            Using p As New Pen(System.Drawing.Color.Black)
+            Using p As New Pen(Theme.Map(System.Drawing.Color.Black))
                 For v As Integer = _min To _max
                     Dim off As Integer = CInt(Math.Round(Math.Max(0, TrackLength()) * (v - _min) / CDbl(span)))
                     If IsHorizontal Then

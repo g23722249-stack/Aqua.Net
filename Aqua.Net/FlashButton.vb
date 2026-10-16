@@ -456,7 +456,8 @@ Namespace Global.Aqua
 
         Private Sub OnClickRevertTick(sender As Object, e As EventArgs)
             _clickRevertTimer.Stop()
-            DrawBackground(FlashButtonVisualState.Hover)
+            ' the darker face stays only while the mouse is over the button (Flash=True: the animation takes over)
+            If _flash OrElse ClientRectangle.Contains(PointToClient(Cursor.Position)) Then DrawBackground(FlashButtonVisualState.Hover) Else RefreshBaseState()
             Dim args As EventArgs = If(_pendingClickArgs, EventArgs.Empty)
             _pendingClickArgs = Nothing
             MyBase.OnClick(args)
@@ -499,6 +500,8 @@ Namespace Global.Aqua
             _mouseEnter = False
             _hover = False
             _hoverTimer.Stop()
+            ' Flash=False has no animation to fade it out: back to the plain face right away
+            If Not _flash Then RefreshBaseState()
             SoundUtil.PlaySound(_soundMouseLeave)
         End Sub
 
@@ -520,7 +523,7 @@ Namespace Global.Aqua
             MyBase.OnGotFocus(e)
             _focused = True
             StartFlashAnimation()
-            If Not _flash Then DrawBackground(FlashButtonVisualState.Hover)
+            ' Flash=False: focus alone doesn't darken the button (it stayed dark after a click)
             SoundUtil.PlaySound(_soundEnterFocus)
             RaiseEvent EnterFocus(Me, EventArgs.Empty)
         End Sub

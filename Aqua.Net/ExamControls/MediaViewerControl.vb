@@ -24,11 +24,12 @@ Public Class MediaViewerControl
 #If NETFRAMEWORK Then
     Private wmpPlayer As AxWMPLib.AxWindowsMediaPlayer
 #Else
-    
-Private _libVlc As LibVLCSharp.Shared.LibVLC
     Private _mediaPlayer As LibVLCSharp.Shared.MediaPlayer
     Private _videoView As LibVLCSharp.WinForms.VideoView
-    Private Shared _vlcCoreInitialized As Boolean
+    ' 所有檢視器共用一個 LibVLC(建立時要載入全部外掛,第一次約 3 秒、之後每次也要 0.3 秒),
+    ' 在背景預先建立(PreloadVideoEngine),點擊播放時就不必在 UI 執行緒上等。程式結束才釋放。
+    Private Shared ReadOnly _vlcLock As New Object
+    Private Shared _vlcTask As System.Threading.Tasks.Task(Of LibVLCSharp.Shared.LibVLC)
 #End If
 
     ' 影片副檔名
@@ -158,6 +159,7 @@ Private _libVlc As LibVLCSharp.Shared.LibVLC
             ElseIf Array.IndexOf(VideoExts, ext) >= 0 Then
                 ' 影片：先以 Shell 縮圖顯示 (與檔案總管相同)，點擊後才播放
                 _isVideo = True
+                PreloadVideoEngine()      ' 顯示縮圖時就在背景備好播放引擎,點擊後立即播放
                 If _loadAsync Then
                     RequestThumbnail(video:=True)
                     Return
@@ -330,6 +332,33 @@ Return wmpPlayer IsNot Nothing
 #End If
     End Function
 
+    ''' <summary>在背景預先載入影片播放引擎(LibVLC),讓第一次點擊播放不必等外掛載入。
+    ''' 可重複呼叫;顯示影片縮圖時會自動呼叫,程式也可在啟動後先呼叫。.NET Framework 版不做事。</summary>
+    Public Shared Sub PreloadVideoEngine()
+#If Not NETFRAMEWORK Then
+        SyncLock _vlcLock
+            If _vlcTask IsNot Nothing AndAlso Not _vlcTask.IsFaulted Then Return
+            _vlcTask = System.Threading.Tasks.Task.Run(
+                Function()
+                    LibVLCSharp.Shared.Core.Initialize()
+                    Return New LibVLCSharp.Shared.LibVLC()
+                End Function)
+        End SyncLock
+#End If
+    End Sub
+
+#If Not NETFRAMEWORK Then
+    ' 共用的 LibVLC;背景還在載入時等它完成(載入失敗則重試一次並把例外丟出,與以前相同)
+    Private Shared Function SharedLibVlc() As LibVLCSharp.Shared.LibVLC
+        PreloadVideoEngine()
+        Dim t As System.Threading.Tasks.Task(Of LibVLCSharp.Shared.LibVLC)
+        SyncLock _vlcLock
+            t = _vlcTask
+        End SyncLock
+        Return t.GetAwaiter().GetResult()
+    End Function
+#End If
+
     ' 建立播放器並開始播放
     Private Sub StartPlayback()
         If String.IsNullOrEmpty(_fileName) OrElse Not File.Exists(_fileName) Then Return
@@ -354,18 +383,10 @@ Return wmpPlayer IsNot Nothing
 
         wmpPlayer.URL = _fileName                  ' 預設 autoStart，設定 URL 即開始播放
 #Else
-       
-
- ' 確保 LibVLC 原生程式庫已初始化 (只需一次)
-        If Not _vlcCoreInitialized Then
-            LibVLCSharp.Shared.Core.Initialize()
-            _vlcCoreInitialized = True
-        End If
-
         _videoView = New LibVLCSharp.WinForms.VideoView() With {.Dock = DockStyle.Fill}
         Me.Controls.Add(_videoView)                ' Add 之後才建立 handle
-        _libVlc = New LibVLCSharp.Shared.LibVLC()
-        _mediaPlayer = New LibVLCSharp.Shared.MediaPlayer(_libVlc)
+        Dim libVlc As LibVLCSharp.Shared.LibVLC = SharedLibVlc()   ' 已預先載入時立即取得
+        _mediaPlayer = New LibVLCSharp.Shared.MediaPlayer(libVlc)
         ' 關閉 libvlc 自身的滑鼠/鍵盤處理,讓 VideoView 收得到滑鼠事件(才能點擊/拖曳)
         _mediaPlayer.EnableMouseInput = False
         _mediaPlayer.EnableKeyInput = False
@@ -386,7 +407,7 @@ Return wmpPlayer IsNot Nothing
         SetThumb(Me.BackgroundImage)
         DisposeBackgroundImage()
 
-        Using media As New LibVLCSharp.Shared.Media(_libVlc, _fileName, LibVLCSharp.Shared.FromType.FromPath)
+        Using media As New LibVLCSharp.Shared.Media(libVlc, _fileName, LibVLCSharp.Shared.FromType.FromPath)
             _mediaPlayer.Play(media)
         End Using
 
@@ -480,10 +501,6 @@ Return wmpPlayer IsNot Nothing
         If _mediaPlayer IsNot Nothing Then
             _mediaPlayer.Dispose()
             _mediaPlayer = Nothing
-        End If
-        If _libVlc IsNot Nothing Then
-            _libVlc.Dispose()
-            _libVlc = Nothing
         End If
 #End If
     End Sub

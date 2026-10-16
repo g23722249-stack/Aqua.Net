@@ -44,6 +44,7 @@ Partial Class Form1
         Me.RadioButton1 = New Aqua.RadioButton()
         Me.Button5 = New Aqua.Button()
         Me.ImageAquaButton1 = New Aqua.ImageButton()
+        Me.ThinButton1 = New Aqua.ThinButton()
         Me.SuspendLayout()
         '
         'Button1
@@ -305,26 +306,29 @@ Partial Class Form1
         Me.Button5.ImageHover = CType(resources.GetObject("Button5.ImageHover"), System.Drawing.Image)
         Me.Button5.ImageNormal = CType(resources.GetObject("Button5.ImageNormal"), System.Drawing.Image)
         Me.Button5.ImagePressed = CType(resources.GetObject("Button5.ImagePressed"), System.Drawing.Image)
-        Me.Button5.Location = New System.Drawing.Point(360, 229)
+        Me.Button5.Location = New System.Drawing.Point(345, 262)
         Me.Button5.Name = "Button5"
-        Me.Button5.Size = New System.Drawing.Size(75, 23)
+        Me.Button5.Size = New System.Drawing.Size(113, 38)
         Me.Button5.TabIndex = 7
         Me.Button5.Text = "Button5"
         '
         'ImageAquaButton1
         '
         Me.ImageAquaButton1.BackColor = System.Drawing.Color.Transparent
-        Me.ImageAquaButton1.ClickImage = Nothing
-        Me.ImageAquaButton1.DisableImage = Nothing
-        Me.ImageAquaButton1.EnterFocusImage = Nothing
-        Me.ImageAquaButton1.ExitFocusImage = Nothing
         Me.ImageAquaButton1.Location = New System.Drawing.Point(327, 212)
-        Me.ImageAquaButton1.MouseHoverImage = Nothing
         Me.ImageAquaButton1.Name = "ImageAquaButton1"
         Me.ImageAquaButton1.Size = New System.Drawing.Size(136, 26)
         Me.ImageAquaButton1.SizeMode = Aqua.ImageSizeMode.Normal
         Me.ImageAquaButton1.TabIndex = 6
         Me.ImageAquaButton1.Text = "ImageAquaButton1"
+        '
+        'ThinButton1
+        '
+        Me.ThinButton1.Location = New System.Drawing.Point(217, 372)
+        Me.ThinButton1.Name = "ThinButton1"
+        Me.ThinButton1.Size = New System.Drawing.Size(99, 27)
+        Me.ThinButton1.TabIndex = 23
+        Me.ThinButton1.Text = "ThinButton1"
         '
         'Form1
         '
@@ -332,6 +336,7 @@ Partial Class Form1
         Me.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font
         Me.BackColor = System.Drawing.SystemColors.ActiveCaption
         Me.ClientSize = New System.Drawing.Size(800, 450)
+        Me.Controls.Add(Me.ThinButton1)
         Me.Controls.Add(Me.DropDownList1)
         Me.Controls.Add(Me.IconBox1)
         Me.Controls.Add(Me.MaskEdit1)
@@ -379,4 +384,5 @@ Partial Class Form1
     Friend WithEvents MaskEdit1 As Aqua.MaskEdit
     Friend WithEvents IconBox1 As Aqua.IconBox
     Friend WithEvents DropDownList1 As Aqua.DropDownList
+    Friend WithEvents ThinButton1 As Aqua.ThinButton
 End Class

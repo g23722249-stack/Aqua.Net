@@ -40,11 +40,17 @@ Namespace Global.Aqua
             Return Load("mnu_imgMenuNextLevel_" & If(disabled, "01", "00"))
         End Function
 
-        Private Function Load(ByVal key As String) As Image
+        ''' <summary>KDE Plasma chrome's menu-bar logo (replaces the blue Apple): a 72x72 transparent PNG,
+        ''' drawn scaled down to the menu bar height.</summary>
+        Public Function GetBird() As Image
+            Return Load("mnu_imgBird", ".png")
+        End Function
+
+        Private Function Load(ByVal key As String, Optional ByVal ext As String = ".bmp") As Image
             SyncLock _sync
                 Dim img As Image = Nothing
                 If _cache.TryGetValue(key, img) Then Return img
-                Using s = Assembly.GetExecutingAssembly().GetManifestResourceStream("Aqua.MenuRes." & key & ".bmp")
+                Using s = Assembly.GetExecutingAssembly().GetManifestResourceStream("Aqua.MenuRes." & key & ext)
                     If s Is Nothing Then Return Nothing
                     Using tmp As New Bitmap(s)
                         img = New Bitmap(tmp)

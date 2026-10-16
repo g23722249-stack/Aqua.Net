@@ -119,8 +119,48 @@ Namespace Global.Aqua
             AddHandler _pressTimer.Tick, AddressOf OnPressTick
             AddHandler _hoverTimer.Tick, AddressOf OnHoverTick
             AddHandler _resizeThrottle.Tick, AddressOf OnResizeThrottleTick
+            AddHandler FormChrome.DefaultStyleChanged, AddressOf OnDefaultChromeChanged
             UpdateRegion()
         End Sub
+
+        Private Sub OnDefaultChromeChanged(sender As Object, e As EventArgs)
+            If _chromeStyle = Aqua.ChromeStyle.Default AndAlso Not IsDisposed Then
+                _hoverBox = Nothing : _pressedBox = Nothing
+                Invalidate()
+            End If
+        End Sub
+
+        '=====================================================================
+        ' Chrome style (macOS / KDE Plasma) -- see FormChromeStyle.vb
+        '=====================================================================
+        Private _chromeStyle As ChromeStyle = Aqua.ChromeStyle.Default
+        ''' <summary>KDE: the control button being pressed (acts on release, like Breeze).</summary>
+        Private _pressedBox As FormControlBox? = Nothing
+        ' last title-bar press, for double-click detection (see IsTitleDoubleClick)
+        Private _titleClickTick As Integer
+        Private _titleClickScreen As Point
+        Private _titleClickValid As Boolean = False
+
+        ''' <summary>Title-bar style: Default follows FormChrome.DefaultStyle (macOS unless the application changes it).</summary>
+        <Category("外觀")>
+        <DefaultValue(Aqua.ChromeStyle.Default)>
+        Public Property ChromeStyle As ChromeStyle
+            Get
+                Return _chromeStyle
+            End Get
+            Set(value As ChromeStyle)
+                If _chromeStyle = value Then Return
+                _chromeStyle = value
+                _hoverBox = Nothing : _pressedBox = Nothing
+                Invalidate()
+            End Set
+        End Property
+
+        Private ReadOnly Property Kde As Boolean
+            Get
+                Return FormChrome.Resolve(_chromeStyle) = Aqua.ChromeStyle.KdePlasma
+            End Get
+        End Property
 
         Protected Overrides Sub OnHandleCreated(e As EventArgs)
             MyBase.OnHandleCreated(e)
@@ -289,6 +329,23 @@ Namespace Global.Aqua
             End Set
         End Property
 
+        Private _roundCorners As Boolean = True
+
+        ''' <summary>上方兩角是圓角（預設，同 VB6）；False＝方角，外框是完整的方框線（小工具視窗用，圓角的描線會被裁掉一半）。</summary>
+        <Category("外觀")>
+        <DefaultValue(True)>
+        Public Property RoundCorners As Boolean
+            Get
+                Return _roundCorners
+            End Get
+            Set(value As Boolean)
+                If _roundCorners = value Then Return
+                _roundCorners = value
+                UpdateRegion()
+                Invalidate()
+            End Set
+        End Property
+
         <Browsable(False)>
         Public ReadOnly Property SelectedMenu As MenuItem
             Get
@@ -362,7 +419,7 @@ Namespace Global.Aqua
         Private Sub UpdateRegion()
             If Width <= 0 OrElse Height <= 0 Then Return
             Dim old As Region = Me.Region
-            Me.Region = RegionUtil.CreateObtusenessRegion(ObtusenessMode.Top, Width, Height, CornerRadius)
+            Me.Region = If(_roundCorners, RegionUtil.CreateObtusenessRegion(ObtusenessMode.Top, Width, Height, CornerRadius), Nothing)
             If old IsNot Nothing Then old.Dispose()
         End Sub
 
@@ -399,6 +456,14 @@ Namespace Global.Aqua
             Return If(MenuBarVisible, TextRenderer.MeasureText("Ag", _menuFont).Height + 6, 0)
         End Function
 
+        ''' <summary>
+        ''' 只重畫標題列與選單列（開關選單、滑過選單、視窗啟用／停用只影響這裡）。
+        ''' 整個視窗 Invalidate 會連內容區的背景一起清掉重畫，多文件時下面的子視窗看起來會閃。
+        ''' </summary>
+        Private Sub InvalidateChrome()
+            Invalidate(New Rectangle(0, 0, Width, TitleBarHeight + MenuBarHeight()))
+        End Sub
+
         Private Function TitleBarRect() As Rectangle
             Return New Rectangle(0, 0, Width, TitleBarHeight)
         End Function
@@ -413,6 +478,7 @@ Namespace Global.Aqua
         End Function
 
         Private Function ControlBoxRect(ByVal box As FormControlBox) As Rectangle
+            If Kde Then Return FormChrome.KdeButtonRect(box, Width, TitleBarHeight, _closeButton, _maxButton)
             Dim x As Integer = ControlBoxStartX
             Dim y As Integer = (TitleBarHeight - ControlBoxIconSize) \ 2
             If box = FormControlBox.Close Then Return New Rectangle(x, y, ControlBoxIconSize, ControlBoxIconSize)
@@ -460,7 +526,7 @@ Namespace Global.Aqua
                 DrawContent(g)
                 DrawBorder(g)
                 If _borderStyle = Aqua.FormBorderStyle.Sizable Then
-                    Dim grip As Image = FormChromeResources.GetSizeGrip()
+                    Dim grip As Image = Theme.Skin(FormChromeResources.GetSizeGrip())
                     If grip IsNot Nothing Then g.DrawImage(grip, ResizeGripRect())
                 End If
             End Using
@@ -469,7 +535,7 @@ Namespace Global.Aqua
         End Sub
 
         Private Sub DrawTitleBar(ByVal g As Graphics, ByVal active As Boolean)
-            Dim bar As Image = FormChromeResources.GetTitleBar(active)
+            Dim bar As Image = Theme.Skin(FormChromeResources.GetTitleBar(active))
             Dim tr As Rectangle = TitleBarRect()
             If bar IsNot Nothing Then
                 Skin.DrawStretch(g, bar, tr, horizontal:=True)
@@ -488,11 +554,17 @@ Namespace Global.Aqua
             If _titleIcon IsNot Nothing Then
                 g.DrawImage(_titleIcon, New Rectangle(titleX - 6 - _titleIcon.Width, (TitleBarHeight - _titleIcon.Height) \ 2, _titleIcon.Width, _titleIcon.Height))
             End If
-            Dim titleColor As Color = If(active, ForeColor, ColorUtil.OleToColor(&H808080))
+            Dim titleColor As Color = If(active, If(Theme.Dark, Theme.TextColor, ForeColor), Theme.Map(ColorUtil.OleToColor(&H808080)))
             ChromeText.DrawCentered(g, Text, _titleFont, New Rectangle(0, 0, Width, TitleBarHeight), titleColor)   ' smoothed (see ChromeText)
         End Sub
 
         Private Sub DrawControlBox(ByVal g As Graphics, ByVal box As FormControlBox, ByVal active As Boolean)
+            If Kde Then
+                Dim hot = _hoverBox.HasValue AndAlso _hoverBox.Value = box
+                Dim down = _pressedBox.HasValue AndAlso _pressedBox.Value = box
+                FormChrome.DrawKdeButton(g, box, ControlBoxRect(box), active, hot AndAlso Not down, down AndAlso hot, WindowState = FormWindowState.Maximized)
+                Return
+            End If
             Dim hover As Boolean = active AndAlso _hoverBox.HasValue AndAlso _hoverBox.Value = box
             Dim img As Image = FormChromeResources.GetControlButton(active, box, hover)
             If img IsNot Nothing Then g.DrawImage(img, ControlBoxRect(box))
@@ -500,7 +572,7 @@ Namespace Global.Aqua
 
         Private Sub DrawMenuBar(ByVal g As Graphics)
             Dim mr As Rectangle = MenuBarRect()
-            Dim bg As Image = MenuResources.GetBackground()
+            Dim bg As Image = Theme.Skin(MenuResources.GetBackground())
             If bg IsNot Nothing Then
                 Skin.DrawStretch(g, bg, mr, horizontal:=False)
             Else
@@ -508,14 +580,27 @@ Namespace Global.Aqua
                     g.FillRectangle(b, mr)
                 End Using
             End If
-            Using p As New Pen(Color.FromArgb(165, 166, 165), 2)
+            Using p As New Pen(Theme.Map(Color.FromArgb(165, 166, 165)), 2)
                 g.DrawLine(p, 0, mr.Bottom, Width, mr.Bottom)
             End Using
 
             _menuItemRects.Clear()
             Dim apple As Image = MenuResources.GetApple()
             Dim x As Integer = MenuResources.MainMenuInterval
-            If apple IsNot Nothing Then
+            If Kde Then
+                ' KDE Plasma: the bird instead of the Apple, square, a little smaller than the menu bar
+                Dim bird As Image = MenuResources.GetBird()
+                Dim sz As Integer = Math.Max(12, Math.Min(18, mr.Height - 4))
+                Dim slot As Integer = If(apple IsNot Nothing, apple.Width, sz)   ' same slot as the Apple, so the menus don't move
+                If bird IsNot Nothing Then
+                    Dim state = g.Save()
+                    g.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+                    g.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
+                    g.DrawImage(bird, New Rectangle(x + (slot - sz) \ 2, mr.Top + (mr.Height - sz) \ 2, sz, sz))
+                    g.Restore(state)
+                End If
+                x += slot + MenuResources.MainMenuInterval
+            ElseIf apple IsNot Nothing Then
                 g.DrawImage(apple, New Rectangle(x, mr.Top + (mr.Height - apple.Height) \ 2, apple.Width, apple.Height))
                 x += apple.Width + MenuResources.MainMenuInterval
             End If
@@ -541,7 +626,7 @@ Namespace Global.Aqua
                         End Using
                     End If
                 End If
-                Dim fc As Color = If(i = _openMenuIndex OrElse i = _hoverMenuIndex, Color.White, ForeColor)
+                Dim fc As Color = If(i = _openMenuIndex OrElse i = _hoverMenuIndex, Color.White, If(Theme.Dark, Theme.TextColor, ForeColor))
                 ChromeText.DrawCentered(g, item.Text, _menuFont, rect, fc)   ' smoothed (see ChromeText); widths still from TextRenderer
                 x += rect.Width
             Next
@@ -567,9 +652,16 @@ Namespace Global.Aqua
         ''' matching UpdateRegion above) guarantees the border always follows the true clipped
         ''' outline. See iForm.vb's DrawBorder for the same fix and the full story.</summary>
         Private Sub DrawBorder(ByVal g As Graphics)
+            If Not _roundCorners Then
+                ' 方角：整圈方框線（沒有裁切，四邊都完整）
+                Using p As New Pen(Theme.Map(Color.FromArgb(148, 150, 148)), 1)
+                    g.DrawRectangle(p, 0, 0, Width - 1, Height - 1)
+                End Using
+                Return
+            End If
             ' See iForm.vb's DrawBorder for why Width-1/Height-1 (not Width/Height) here.
             Using path As Drawing2D.GraphicsPath = RegionUtil.CreateObtusenessPath(ObtusenessMode.Top, Width - 1, Height - 1, CornerRadius)
-                Using p As New Pen(Color.FromArgb(148, 150, 148), 1)
+                Using p As New Pen(Theme.Map(Color.FromArgb(148, 150, 148)), 1)
                     g.DrawPath(p, path)
                 End Using
             End Using
@@ -595,16 +687,16 @@ Namespace Global.Aqua
                 Return
             End If
 
-            If _closeButton AndAlso ControlBoxRect(FormControlBox.Close).Contains(e.Location) Then
-                Close()
-                Return
-            End If
-            If _minButton AndAlso ControlBoxRect(FormControlBox.Minimize).Contains(e.Location) Then
-                WindowState = FormWindowState.Minimized
-                Return
-            End If
-            If _maxButton AndAlso ControlBoxRect(FormControlBox.Maximize).Contains(e.Location) Then
-                WindowState = If(WindowState = FormWindowState.Maximized, FormWindowState.Normal, FormWindowState.Maximized)
+            Dim hitBox = ControlBoxAt(e.Location)
+            If hitBox.HasValue Then
+                If Kde Then
+                    ' Breeze: the button shows pressed and acts on release (moving off cancels)
+                    _pressedBox = hitBox
+                    Capture = True
+                    InvalidateChrome()
+                Else
+                    DoControlBox(hitBox.Value)
+                End If
                 Return
             End If
 
@@ -618,8 +710,15 @@ Namespace Global.Aqua
 
             If TitleBarRect().Contains(e.Location) Then
                 CloseOpenMenu()
+                ' double-click on the title maximizes / restores, like a native caption (only
+                ' when the window has a maximize button, same as Windows)
+                If _maxButton AndAlso IsTitleDoubleClick(e) Then
+                    ToggleMaximize()
+                    Return
+                End If
                 SoundUtil.PlaySound(_soundClick)
-                NativeWindowDrag.BeginDragMove(Handle)
+                ' a maximized window doesn't move (Windows drags it out of maximize; keep it simple: stay put)
+                If WindowState <> FormWindowState.Maximized Then NativeWindowDrag.BeginDragMove(Handle)
                 Return
             End If
 
@@ -631,9 +730,66 @@ Namespace Global.Aqua
             End If
         End Sub
 
+        ''' <summary>The control button under p (only the ones that are turned on).</summary>
+        Private Function ControlBoxAt(ByVal p As Point) As FormControlBox?
+            If _closeButton AndAlso ControlBoxRect(FormControlBox.Close).Contains(p) Then Return FormControlBox.Close
+            If _minButton AndAlso ControlBoxRect(FormControlBox.Minimize).Contains(p) Then Return FormControlBox.Minimize
+            If _maxButton AndAlso ControlBoxRect(FormControlBox.Maximize).Contains(p) Then Return FormControlBox.Maximize
+            Return Nothing
+        End Function
+
+        ' Maximize / restore like a native window: maximized stops at the working area (taskbar stays).
+        Private Sub ToggleMaximize()
+            If WindowState = FormWindowState.Maximized Then
+                WindowState = FormWindowState.Normal
+            Else
+                MaximizedBounds = FormChrome.MaximizedArea(Me)
+                WindowState = FormWindowState.Maximized
+            End If
+        End Sub
+
+        Private Sub DoControlBox(ByVal box As FormControlBox)
+            Select Case box
+                Case FormControlBox.Close : Close()
+                Case FormControlBox.Minimize : WindowState = FormWindowState.Minimized
+                Case FormControlBox.Maximize : ToggleMaximize()
+            End Select
+        End Sub
+
+        ''' <summary>Whether this title-bar press completes a double-click. Tracked by hand because the
+        ''' first press goes into the OS move loop (BeginDragMove), which swallows the button-up, so
+        ''' WinForms doesn't reliably report the second press as a double-click (e.Clicks = 2).
+        ''' Same as iForm.IsTitleDoubleClick.</summary>
+        Private Function IsTitleDoubleClick(ByVal e As MouseEventArgs) As Boolean
+            Dim now As Integer = Environment.TickCount
+            Dim pt As Point = PointToScreen(e.Location)
+            Dim area As Size = SystemInformation.DoubleClickSize
+            Dim isDouble As Boolean = e.Clicks >= 2 OrElse
+                (_titleClickValid AndAlso
+                 now - _titleClickTick <= SystemInformation.DoubleClickTime AndAlso
+                 Math.Abs(pt.X - _titleClickScreen.X) <= area.Width \ 2 AndAlso
+                 Math.Abs(pt.Y - _titleClickScreen.Y) <= area.Height \ 2)
+            If isDouble Then
+                _titleClickValid = False
+            Else
+                _titleClickValid = True
+                _titleClickTick = now
+                _titleClickScreen = pt
+            End If
+            Return isDouble
+        End Function
+
         Protected Overrides Sub OnMouseUp(e As MouseEventArgs)
             MyBase.OnMouseUp(e)
             _pressTimer.Stop()
+            If _pressedBox.HasValue Then
+                Dim box = _pressedBox.Value
+                _pressedBox = Nothing
+                Capture = False
+                InvalidateChrome()
+                If ControlBoxRect(box).Contains(e.Location) Then DoControlBox(box)
+                Return
+            End If
             If _resizing Then
                 _resizing = False
                 Capture = False
@@ -670,7 +826,7 @@ Namespace Global.Aqua
             End If
             CloseOpenMenu()
             _openMenuIndex = index
-            Invalidate()
+            InvalidateChrome()
             RaiseEvent MenuOpen(Me, EventArgs.Empty)
 
             _openPopup = New MenuPopupForm()
@@ -696,7 +852,7 @@ Namespace Global.Aqua
             End If
             If _openMenuIndex >= 0 Then
                 _openMenuIndex = -1
-                Invalidate()
+                InvalidateChrome()
                 RaiseEvent MenuClose(Me, EventArgs.Empty)
             End If
         End Sub
@@ -723,20 +879,17 @@ Namespace Global.Aqua
                 Return
             End If
 
-            Dim newHoverBox As FormControlBox? = Nothing
-            If _closeButton AndAlso ControlBoxRect(FormControlBox.Close).Contains(e.Location) Then newHoverBox = FormControlBox.Close
-            If _minButton AndAlso ControlBoxRect(FormControlBox.Minimize).Contains(e.Location) Then newHoverBox = FormControlBox.Minimize
-            If _maxButton AndAlso ControlBoxRect(FormControlBox.Maximize).Contains(e.Location) Then newHoverBox = FormControlBox.Maximize
-            If newHoverBox <> _hoverBox Then
+            Dim newHoverBox As FormControlBox? = ControlBoxAt(e.Location)
+            If Not Nullable.Equals(newHoverBox, _hoverBox) Then
                 _hoverBox = newHoverBox
-                Invalidate()
+                InvalidateChrome()
             End If
 
             If MenuBarVisible Then
                 Dim idx As Integer = MenuIndexAt(e.Location)
                 If idx <> _hoverMenuIndex Then
                     _hoverMenuIndex = idx
-                    Invalidate()
+                    InvalidateChrome()
                     If idx >= 0 AndAlso _openMenuIndex >= 0 AndAlso _openMenuIndex <> idx Then ToggleMenu(idx)
                 End If
             End If
@@ -760,7 +913,7 @@ Namespace Global.Aqua
             _hoverTimer.Stop()
             If _hoverBox.HasValue Then
                 _hoverBox = Nothing
-                Invalidate()
+                InvalidateChrome()
             End If
             SoundUtil.PlaySound(_soundMouseLeave)
         End Sub
@@ -786,7 +939,7 @@ Namespace Global.Aqua
 
         Protected Overrides Sub OnActivated(e As EventArgs)
             MyBase.OnActivated(e)
-            Invalidate()
+            InvalidateChrome()
         End Sub
 
         Protected Overrides Sub OnDeactivate(e As EventArgs)
@@ -796,7 +949,7 @@ Namespace Global.Aqua
             ' that would close the menu the instant it opens. The popup's own activation-chain
             ' logic (MenuPopupForm.OnDeactivate) already closes it when focus genuinely leaves the
             ' whole menu system, and notifies us via AutoClosed (see ToggleMenu) to reconcile.
-            Invalidate()
+            InvalidateChrome()
         End Sub
 
         Protected Overrides Sub OnTextChanged(e As EventArgs)
@@ -854,6 +1007,7 @@ Namespace Global.Aqua
 
         Protected Overrides Sub Dispose(disposing As Boolean)
             If disposing Then
+                RemoveHandler FormChrome.DefaultStyleChanged, AddressOf OnDefaultChromeChanged
                 _hoverTimer.Stop() : _hoverTimer.Dispose()
                 _pressTimer.Stop() : _pressTimer.Dispose()
                 _resizeThrottle.Stop() : _resizeThrottle.Dispose()

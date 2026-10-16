@@ -12,6 +12,7 @@ Public Class frmTest_AquaForm
     Private lblHint As Label
 
     Private _aquaFormInstance As Aqua.AquaForm
+    Friend WithEvents Button1 As Aqua.Button
     Private _iFormInstance As Aqua.iForm
 
     Public Sub New()
@@ -162,11 +163,27 @@ Public Class frmTest_AquaForm
     End Sub
 
     Private Sub InitializeComponent()
+        Dim resources As System.ComponentModel.ComponentResourceManager = New System.ComponentModel.ComponentResourceManager(GetType(frmTest_AquaForm))
+        Me.Button1 = New Aqua.Button()
         Me.SuspendLayout()
+        '
+        'Button1
+        '
+        Me.Button1.BackColor = System.Drawing.Color.Transparent
+        Me.Button1.ImageDisabled = CType(resources.GetObject("Button1.ImageDisabled"), System.Drawing.Image)
+        Me.Button1.ImageHover = CType(resources.GetObject("Button1.ImageHover"), System.Drawing.Image)
+        Me.Button1.ImageNormal = CType(resources.GetObject("Button1.ImageNormal"), System.Drawing.Image)
+        Me.Button1.ImagePressed = CType(resources.GetObject("Button1.ImagePressed"), System.Drawing.Image)
+        Me.Button1.Location = New System.Drawing.Point(12, 88)
+        Me.Button1.Name = "Button1"
+        Me.Button1.Size = New System.Drawing.Size(129, 33)
+        Me.Button1.TabIndex = 0
+        Me.Button1.Text = "Button1"
         '
         'frmTest_AquaForm
         '
         Me.ClientSize = New System.Drawing.Size(284, 261)
+        Me.Controls.Add(Me.Button1)
         Me.Name = "frmTest_AquaForm"
         Me.ResumeLayout(False)
 

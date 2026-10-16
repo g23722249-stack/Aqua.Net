@@ -175,11 +175,11 @@ Namespace Global.Aqua
 
         Protected Overrides Sub OnPaint(e As PaintEventArgs)
             Dim g As Graphics = e.Graphics
-            Dim bg As Image = MenuResources.GetBackground()
+            Dim bg As Image = Theme.Skin(MenuResources.GetBackground())
             If bg IsNot Nothing Then
                 Skin.DrawStretch(g, bg, New Rectangle(0, 0, Width, Height), horizontal:=False)
             Else
-                g.Clear(Color.White)
+                g.Clear(Theme.Map(Color.White))
             End If
 
             Dim hasIcon As Boolean = AnyIcon()
@@ -189,7 +189,7 @@ Namespace Global.Aqua
                 Dim r As Row = _rows(i)
                 If r.IsSeparator Then
                     Dim sepY As Integer = r.Bounds.Top + r.Bounds.Height \ 2
-                    Using p As New Pen(Color.FromArgb(190, 190, 190))
+                    Using p As New Pen(Theme.Map(Color.FromArgb(190, 190, 190)))
                         g.DrawLine(p, 2, sepY, Width - 3, sepY)
                     End Using
                     Continue For
@@ -231,7 +231,7 @@ Namespace Global.Aqua
                     x += MenuResources.IconSize + MenuResources.ItemPadding
                 End If
 
-                Dim textColor As Color = If(Not r.Menu.Enabled, Color.FromArgb(150, 150, 150), If(i = _hoverRow, Color.White, ForeColor))
+                Dim textColor As Color = If(Not r.Menu.Enabled, Theme.Map(Color.FromArgb(150, 150, 150)), If(i = _hoverRow, Color.White, If(Theme.Dark, Theme.TextColor, ForeColor)))
                 Dim textRect As New Rectangle(x, rowRect.Top, rowRect.Width - x - MenuResources.ItemPadding - MenuResources.IconSize, rowRect.Height)
                 TextRenderer.DrawText(g, r.Menu.Text, Font, textRect, textColor, TextFormatFlags.VerticalCenter Or TextFormatFlags.Left Or TextFormatFlags.EndEllipsis)
 
@@ -244,7 +244,7 @@ Namespace Global.Aqua
                 End If
             Next
 
-            Using p As New Pen(Color.FromArgb(160, 160, 160))
+            Using p As New Pen(Theme.Map(Color.FromArgb(160, 160, 160)))
                 g.DrawRectangle(p, 0, 0, Width - 1, Height - 1)
             End Using
         End Sub

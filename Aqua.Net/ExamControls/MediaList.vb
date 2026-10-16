@@ -113,6 +113,13 @@ Public Class MediaList
     Private _showCheckBox As Boolean = True
     Private _showRating As Boolean = True
     Private _lastPerLine As Integer = 1   ' 上次計算的每列數量,縮放時比對是否需重排
+    ' 分段標題(只在垂直捲動時):第一個項目的索引 → 標題。每段從新的一列開始,上面留標題列。
+    Private ReadOnly _sections As New SortedList(Of Integer, String)()
+    Private _sectionHeaderHeight As Integer = 34
+    Private _sectionHeaderWidth As Integer = 68     ' 水平捲動時:每段前面的標題欄寬
+    Private _sectionFont As Font = Nothing
+    Private _sectionForeColor As Color = Color.FromArgb(40, 40, 40)
+    Private _sectionSubColor As Color = Color.FromArgb(120, 120, 120)
     Private _selectedItem As MediaItem = Nothing   ' 目前選取項目(單選;多選時是焦點項目)
     ' 多選(MultiSelect):所有選取的項目(含 _selectedItem);單選時只有 _selectedItem 一項或空
     Private ReadOnly _multi As New HashSet(Of MediaItem)()
@@ -158,6 +165,33 @@ Public Class MediaList
         RaiseEvent SelectionChanged(Me, EventArgs.Empty)
     End Sub
 
+    ''' <summary>全不選:只留焦點項目(清單總要有一個目前項目,iPhoto 靠它顯示照片)。</summary>
+    Public Sub SelectNone()
+        If _multi.Count <= 1 Then Return
+        SetOnly(_selectedItem)
+        RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+    End Sub
+
+    ''' <summary>反向選取(MultiSelect 時):選取中的取消、沒選的選取;焦點移到選取中的第一項
+    ''' (全部都取消時留在原來那一項)。</summary>
+    Public Sub InvertSelection()
+        If Not _multiSelect OrElse _items.Count = 0 Then Return
+        Dim wanted As New List(Of MediaItem)
+        For Each it As MediaItem In _items
+            If Not _multi.Contains(it) Then wanted.Add(it)
+        Next
+        If wanted.Count = 0 Then
+            SelectNone()
+            Return
+        End If
+        Dim focus As MediaItem = If(wanted.Contains(_selectedItem), _selectedItem, wanted(0))
+        SelectCore(_items.IndexOf(focus), SelectSource.Code, Nothing, -1)   ' focus alone first (events as usual)
+        For Each it In wanted
+            If _multi.Add(it) Then it.Selected = True
+        Next
+        RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+    End Sub
+
     ''' <summary>只留 <paramref name="keep"/> 在選取中(Nothing:全部取消)。</summary>
     Private Sub SetOnly(ByVal keep As MediaItem)
         For Each it In _multi.ToList()
@@ -182,6 +216,8 @@ Public Class MediaList
 
         ' 縮放時 viewport ClientSize 改變 → 每列數量可能改變 → 需重排/重算捲軸。
         AddHandler _viewport.ClientSizeChanged, AddressOf OnViewportResized
+        AddHandler _viewport.Paint, AddressOf PaintSections
+        AddHandler _viewport.MouseDown, AddressOf ViewportMouseDown
     End Sub
 
     ' ===== 滑鼠滾輪(IMessageFilter,不被子控制項吃掉) =====
@@ -412,7 +448,7 @@ Public Class MediaList
         Dim index As Integer = _items.Count
         Dim perLine As Integer = ComputePerLine()
         _lastPerLine = perLine
-        Dim rc As Rectangle = ComputeCellBounds(index, perLine)
+        Dim rc As Rectangle = CellBounds(index, perLine)
 
         ' 只記下位置:要到捲進顯示區域(UpdateRealized)才放進 viewport、建立視窗
         _items.Add(item)
@@ -429,9 +465,27 @@ Public Class MediaList
 
         _contentSize = New Size(Math.Max(_contentSize.Width, rc.Right + _itemMargin), Math.Max(_contentSize.Height, rc.Bottom + _itemMargin))
 
-        UpdateScrollMetrics()   ' 捲動位置不變(不會自動捲到新項目);新項目在顯示區域內才建立視窗
+        If _updating = 0 Then UpdateScrollMetrics()   ' 捲動位置不變(不會自動捲到新項目);新項目在顯示區域內才建立視窗
         Return item
     End Function
+
+    Private _updating As Integer = 0
+
+    ''' <summary>一次加入大量項目前呼叫:AddItem 只記下位置,不更新捲軸、不建立視窗,
+    ''' 到 EndUpdate 才一次做完(數千張時快很多)。可以巢狀呼叫。</summary>
+    Public Sub BeginUpdate()
+        _updating += 1
+    End Sub
+
+    ''' <summary>結束 BeginUpdate:更新捲軸並顯示可見的項目。</summary>
+    Public Sub EndUpdate()
+        If _updating = 0 Then Return
+        _updating -= 1
+        If _updating = 0 Then
+            UpdateScrollMetrics()
+            _viewport.Invalidate()
+        End If
+    End Sub
 
     ''' <summary>
     ''' 新增項目(VB6 AddItem 簽章):評分 0、核取方塊依清單的 ShowCheckBox、未勾選。
@@ -482,9 +536,11 @@ Public Class MediaList
         Next
         _items.Clear()
         _bounds.Clear()
+        _sections.Clear()
         _contentSize = Size.Empty
         _scrollOffset = 0
         UpdateScrollMetrics()
+        _viewport.Invalidate()
         _multi.Clear()
         _anchor = Nothing
         If _selectedItem IsNot Nothing Then
@@ -514,6 +570,7 @@ Public Class MediaList
         _pending.Remove(item)
         _items.RemoveAt(index)
         _bounds.RemoveAt(index)
+        ShiftSectionsAfterRemove(index)
         item.Dispose()
         If wasSelected Then
             _selectedItem = Nothing
@@ -544,7 +601,7 @@ Public Class MediaList
     Public Sub EnsureVisible(ByVal index As Integer)
         If index < 0 OrElse index >= _items.Count Then Return
         Dim rc As Rectangle = _bounds(index)
-        Dim target As Integer = If(_scrollDirection = MediaScrollDirection.Vertical, rc.Y, rc.X)
+        Dim target As Integer = If(_scrollDirection = MediaScrollDirection.Vertical, rc.Y, rc.X) - HeaderAbove(index)
         ApplyScroll(target)
     End Sub
 
@@ -639,12 +696,13 @@ Public Class MediaList
     End Sub
 
     ' 由項目點擊觸發的選取(供事件轉發器呼叫);清單取得焦點,之後方向鍵可移動選取
-    Friend Sub SelectByClick(ByVal item As MediaItem)
+    ''' <param name="toggle">True:當作按著 Ctrl 點選(滑鼠中鍵)。</param>
+    Friend Sub SelectByClick(ByVal item As MediaItem, Optional ByVal toggle As Boolean = False)
         Dim idx As Integer = _items.IndexOf(item)
         If idx < 0 Then Return
         If Not Me.ContainsFocus Then Me.Focus()
         Dim mods As Keys = Control.ModifierKeys
-        If _multiSelect AndAlso (mods And Keys.Control) = Keys.Control Then
+        If _multiSelect AndAlso (toggle OrElse (mods And Keys.Control) = Keys.Control) Then
             ' Ctrl+點選:加入或移出選取
             If _multi.Contains(item) AndAlso _multi.Count > 1 Then
                 _multi.Remove(item)
@@ -680,7 +738,7 @@ Public Class MediaList
     Private Sub ScrollIntoView(ByVal index As Integer)
         If index < 0 OrElse index >= _bounds.Count Then Return
         Dim rc As Rectangle = _bounds(index)
-        Dim startPos As Integer = If(_scrollDirection = MediaScrollDirection.Vertical, rc.Top, rc.Left)
+        Dim startPos As Integer = If(_scrollDirection = MediaScrollDirection.Vertical, rc.Top, rc.Left) - HeaderAbove(index)
         Dim endPos As Integer = If(_scrollDirection = MediaScrollDirection.Vertical, rc.Bottom, rc.Right)
         If startPos - _itemMargin < _scrollOffset Then
             ApplyScroll(startPos - _itemMargin)
@@ -962,6 +1020,8 @@ Public Class MediaList
             Case Else : Return -1
         End Select
         If cur < 0 Then Return 0
+        If HasSections() AndAlso vertical AndAlso (key = Keys.Up OrElse key = Keys.Down) Then Return RowNeighbour(cur, key = Keys.Down)
+        If HasSections() AndAlso Not vertical AndAlso (key = Keys.Left OrElse key = Keys.Right) Then Return RowNeighbour(cur, key = Keys.Right)
         Return Math.Max(0, Math.Min(last, cur + stepVal))
     End Function
 
@@ -1049,7 +1109,7 @@ Public Class MediaList
         _lastPerLine = perLine
         Dim maxR As Integer = 0, maxB As Integer = 0
         For i As Integer = 0 To _items.Count - 1
-            Dim rc As Rectangle = ComputeCellBounds(i, perLine)
+            Dim rc As Rectangle = CellBounds(i, perLine)   ' 依序算:有分段時接著前一項排
             _bounds(i) = rc
             maxR = Math.Max(maxR, rc.Right + _itemMargin)
             maxB = Math.Max(maxB, rc.Bottom + _itemMargin)
@@ -1057,6 +1117,326 @@ Public Class MediaList
         _contentSize = If(_items.Count = 0, Size.Empty, New Size(maxR, maxB))
         _layoutVersion += 1   ' 有視窗的項目全部要重新擺
         UpdateScrollMetrics()
+    End Sub
+
+    ' ===== 分段標題 =====
+    ' AddSection("標題") 之後加入的項目屬於這一段:從新的一列開始,上面畫一列標題(清單背景上畫,
+    ' 不是控制項)。標題可用 Tab 分成兩部分:前面粗體、後面灰色,例如 "3月15日 星期五" & vbTab & "臺中市 · 12 張"。
+    ' 水平捲動時每段從新的一欄開始,前面一欄(SectionHeaderWidth)畫標題,文字自動換行。Clear 會清掉所有分段。
+
+    ''' <summary>按下某段的標題列(sectionIndex 從 0 起)。</summary>
+    <Category("MediaList"), Description("按下分段標題時發生。")>
+    Public Event SectionClick(ByVal sectionIndex As Integer, ByVal e As MouseEventArgs)
+
+    ''' <summary>標題列高度(像素)。</summary>
+    <Category("MediaList"), DefaultValue(34)>
+    Public Property SectionHeaderHeight As Integer
+        Get
+            Return _sectionHeaderHeight
+        End Get
+        Set(value As Integer)
+            value = Math.Max(12, value)
+            If _sectionHeaderHeight = value Then Return
+            _sectionHeaderHeight = value
+            If _sections.Count > 0 Then RelayoutItems()
+        End Set
+    End Property
+
+    ''' <summary>水平捲動時,每段前面標題欄的寬(像素);標題在欄裡自動換行。</summary>
+    <Category("MediaList"), DefaultValue(68)>
+    Public Property SectionHeaderWidth As Integer
+        Get
+            Return _sectionHeaderWidth
+        End Get
+        Set(value As Integer)
+            value = Math.Max(24, value)
+            If _sectionHeaderWidth = value Then Return
+            _sectionHeaderWidth = value
+            If _sections.Count > 0 Then RelayoutItems()
+        End Set
+    End Property
+
+    ''' <summary>標題字型(Nothing = 清單字型加粗、放大一級)。</summary>
+    <Category("MediaList"), DefaultValue(GetType(Font), Nothing)>
+    Public Property SectionFont As Font
+        Get
+            Return _sectionFont
+        End Get
+        Set(value As Font)
+            _sectionFont = value
+            _viewport.Invalidate()
+        End Set
+    End Property
+
+    <Category("MediaList")>
+    Public Property SectionForeColor As Color
+        Get
+            Return _sectionForeColor
+        End Get
+        Set(value As Color)
+            _sectionForeColor = value
+            _viewport.Invalidate()
+        End Set
+    End Property
+
+    ''' <summary>標題 Tab 後面那部分的顏色。</summary>
+    <Category("MediaList")>
+    Public Property SectionSubColor As Color
+        Get
+            Return _sectionSubColor
+        End Get
+        Set(value As Color)
+            _sectionSubColor = value
+            _viewport.Invalidate()
+        End Set
+    End Property
+
+    ''' <summary>下一個加入的項目開始新的一段。連續呼叫兩次(中間沒有項目)時用後面的標題。</summary>
+    Public Sub AddSection(ByVal title As String)
+        _sections(_items.Count) = If(title, "")
+    End Sub
+
+    <Browsable(False)>
+    Public ReadOnly Property SectionCount As Integer
+        Get
+            Return _sections.Count
+        End Get
+    End Property
+
+    Public Function SectionTitle(ByVal sectionIndex As Integer) As String
+        Return _sections.Values(sectionIndex)
+    End Function
+
+    ''' <summary>第 sectionIndex 段第一個項目的索引。</summary>
+    Public Function SectionFirstIndex(ByVal sectionIndex As Integer) As Integer
+        Return _sections.Keys(sectionIndex)
+    End Function
+
+    ''' <summary>第 sectionIndex 段最後一個項目的索引。</summary>
+    Public Function SectionLastIndex(ByVal sectionIndex As Integer) As Integer
+        Return If(sectionIndex + 1 < _sections.Count, _sections.Keys(sectionIndex + 1), _items.Count) - 1
+    End Function
+
+    ''' <summary>項目所在的段(-1 = 在第一段之前,或沒有分段)。</summary>
+    Public Function SectionOfItem(ByVal index As Integer) As Integer
+        Dim keys As IList(Of Integer) = _sections.Keys
+        Dim lo As Integer = 0, hi As Integer = keys.Count - 1, found As Integer = -1
+        While lo <= hi
+            Dim mid As Integer = (lo + hi) \ 2
+            If keys(mid) <= index Then
+                found = mid
+                lo = mid + 1
+            Else
+                hi = mid - 1
+            End If
+        End While
+        Return found
+    End Function
+
+    ''' <summary>把第 sectionIndex 段的標題捲到最上面。</summary>
+    Public Sub ScrollToSection(ByVal sectionIndex As Integer)
+        If sectionIndex < 0 OrElse sectionIndex >= _sections.Count Then Return
+        Dim first As Integer = _sections.Keys(sectionIndex)
+        If first < _items.Count Then EnsureVisible(first)
+    End Sub
+
+    Private Function HasSections() As Boolean
+        Return _sections.Count > 0
+    End Function
+
+    Private ReadOnly Property IsVertical As Boolean
+        Get
+            Return _scrollDirection = MediaScrollDirection.Vertical
+        End Get
+    End Property
+
+    ''' <summary>標題佔主軸(捲動方向)的長度:垂直時是標題列的高,水平時是標題欄的寬。</summary>
+    Private ReadOnly Property HeaderLen As Integer
+        Get
+            Return If(IsVertical, _sectionHeaderHeight, _sectionHeaderWidth)
+        End Get
+    End Property
+
+    Private Function MainStart(ByVal rc As Rectangle) As Integer
+        Return If(IsVertical, rc.Y, rc.X)
+    End Function
+
+    Private Function MainEnd(ByVal rc As Rectangle) As Integer
+        Return If(IsVertical, rc.Bottom, rc.Right)
+    End Function
+
+    Private Function CrossStart(ByVal rc As Rectangle) As Integer
+        Return If(IsVertical, rc.X, rc.Y)
+    End Function
+
+    ''' <summary>項目在它那一段的第一列(水平:第一欄)時,前面標題的長度(捲到它時要連標題一起露出來);否則 0。</summary>
+    Private Function HeaderAbove(ByVal index As Integer) As Integer
+        If Not HasSections() Then Return 0
+        Dim s As Integer = SectionOfItem(index)
+        If s < 0 Then Return 0
+        Dim first As Integer = _sections.Keys(s)
+        Return If(first < _bounds.Count AndAlso MainStart(_bounds(first)) = MainStart(_bounds(index)), HeaderLen, 0)
+    End Function
+
+    ''' <summary>第 index 項的邏輯座標。有分段時要依序算(接著 _bounds(index - 1) 排):每段從新的一列
+    ''' (水平:新的一欄)開始,前面留標題的位置。</summary>
+    Private Function CellBounds(ByVal index As Integer, ByVal perLine As Integer) As Rectangle
+        If Not HasSections() Then Return ComputeCellBounds(index, perLine)
+        Dim sz As Size = EffectiveItemSize()
+        Dim m As Integer = _itemMargin
+        Dim s As Integer = SectionOfItem(index)
+        Dim first As Integer = If(s < 0, 0, _sections.Keys(s))
+        Dim cross As Integer = (index - first) Mod Math.Max(1, perLine)
+        Dim main As Integer
+        If index = 0 Then
+            main = If(first = 0 AndAlso s >= 0, HeaderLen, m)
+        ElseIf index = first AndAlso s >= 0 Then
+            main = MainEnd(_bounds(index - 1)) + m + HeaderLen
+        ElseIf cross = 0 Then
+            main = MainEnd(_bounds(index - 1)) + m
+        Else
+            main = MainStart(_bounds(index - 1))
+        End If
+        If IsVertical Then Return New Rectangle(m + cross * (sz.Width + m), main, sz.Width, sz.Height)
+        Return New Rectangle(main, m + cross * (sz.Height + m), sz.Width, sz.Height)
+    End Function
+
+    ''' <summary>有分段時各列(欄)長短不一:用二分搜尋找顯示區域(加前後一列)涵蓋的項目。</summary>
+    Private Sub VisibleRangeBySearch(ByRef first As Integer, ByRef last As Integer)
+        Dim sz As Size = EffectiveItemSize()
+        Dim lineLen As Integer = If(IsVertical, sz.Height, sz.Width) + _itemMargin
+        Dim lowEdge As Integer = _scrollOffset - lineLen
+        Dim highEdge As Integer = _scrollOffset + ViewLen() + lineLen
+        Dim n As Integer = _bounds.Count
+        ' 第一個結束 >= lowEdge
+        Dim lo As Integer = 0, hi As Integer = n
+        While lo < hi
+            Dim mid As Integer = (lo + hi) \ 2
+            If MainEnd(_bounds(mid)) >= lowEdge Then hi = mid Else lo = mid + 1
+        End While
+        first = lo
+        ' 最後一個開始 <= highEdge
+        lo = 0 : hi = n
+        While lo < hi
+            Dim mid As Integer = (lo + hi) \ 2
+            If MainStart(_bounds(mid)) <= highEdge Then lo = mid + 1 Else hi = mid
+        End While
+        last = lo - 1
+        If first >= n OrElse last < first Then first = -1 : last = -1
+    End Sub
+
+    ''' <summary>前／後一列(水平:一欄)裡交叉軸位置最接近的項目(有分段時列的長短不一)。</summary>
+    Private Function RowNeighbour(ByVal cur As Integer, ByVal forward As Boolean) As Integer
+        Dim rcMain As Integer = MainStart(_bounds(cur)), rcCross As Integer = CrossStart(_bounds(cur))
+        Dim last As Integer = _items.Count - 1
+        If forward Then
+            Dim j As Integer = cur + 1
+            While j <= last AndAlso MainStart(_bounds(j)) = rcMain : j += 1 : End While
+            If j > last Then Return cur
+            Dim lineAt As Integer = MainStart(_bounds(j)), best As Integer = j
+            While j <= last AndAlso MainStart(_bounds(j)) = lineAt
+                If CrossStart(_bounds(j)) <= rcCross Then best = j
+                j += 1
+            End While
+            Return best
+        Else
+            Dim j As Integer = cur - 1
+            While j >= 0 AndAlso MainStart(_bounds(j)) = rcMain : j -= 1 : End While
+            If j < 0 Then Return cur
+            Dim lineAt As Integer = MainStart(_bounds(j)), best As Integer = j
+            While j >= 0 AndAlso MainStart(_bounds(j)) = lineAt
+                If CrossStart(_bounds(j)) <= rcCross Then
+                    best = j
+                    Exit While
+                End If
+                j -= 1
+            End While
+            Return best
+        End If
+    End Function
+
+    ''' <summary>移除第 index 項後:之後的分段往前移一格;變成空的分段拿掉。</summary>
+    Private Sub ShiftSectionsAfterRemove(ByVal index As Integer)
+        If _sections.Count = 0 Then Return
+        Dim moved As New List(Of KeyValuePair(Of Integer, String))
+        For Each kv In _sections
+            moved.Add(If(kv.Key > index, New KeyValuePair(Of Integer, String)(kv.Key - 1, kv.Value), kv))
+        Next
+        _sections.Clear()
+        For Each kv In moved
+            _sections(kv.Key) = kv.Value   ' 同一個起點(前一段空了):後面那段留下
+        Next
+        ' 最後一段沒有項目了
+        While _sections.Count > 0 AndAlso _sections.Keys(_sections.Count - 1) >= _items.Count AndAlso _items.Count > 0
+            _sections.RemoveAt(_sections.Count - 1)
+        End While
+        _viewport.Invalidate()
+    End Sub
+
+    ''' <summary>標題在畫面上的位置(viewport 座標):垂直時是一列,水平時是一欄;該段沒有項目時 Rectangle.Empty。</summary>
+    Private Function SectionHeaderRect(ByVal sectionIndex As Integer) As Rectangle
+        Dim first As Integer = _sections.Keys(sectionIndex)
+        If first >= _bounds.Count Then Return Rectangle.Empty
+        Dim at As Integer = MainStart(_bounds(first)) - HeaderLen - _scrollOffset
+        If IsVertical Then Return New Rectangle(0, at, _viewport.ClientSize.Width, _sectionHeaderHeight)
+        Return New Rectangle(at, 0, _sectionHeaderWidth, _viewport.ClientSize.Height)
+    End Function
+
+    Private Sub PaintSections(sender As Object, e As PaintEventArgs)
+        If Not HasSections() Then Return
+        Dim bold As Font = If(_sectionFont, New Font(Me.Font.FontFamily, Me.Font.Size + 1.5F, FontStyle.Bold))
+        Try
+            Dim flags As TextFormatFlags = TextFormatFlags.Left Or TextFormatFlags.VerticalCenter Or TextFormatFlags.SingleLine Or TextFormatFlags.NoPrefix Or TextFormatFlags.EndEllipsis
+            ' a column (horizontal): the title wraps, main part then the grey part, from the top
+            Dim colFlags As TextFormatFlags = TextFormatFlags.HorizontalCenter Or TextFormatFlags.WordBreak Or TextFormatFlags.NoPrefix
+            For s As Integer = 0 To _sections.Count - 1
+                Dim r As Rectangle = SectionHeaderRect(s)
+                If r.IsEmpty Then Continue For
+                If IsVertical Then
+                    If r.Bottom < e.ClipRectangle.Top Then Continue For
+                    If r.Top > e.ClipRectangle.Bottom Then Exit For
+                Else
+                    If r.Right < e.ClipRectangle.Left Then Continue For
+                    If r.Left > e.ClipRectangle.Right Then Exit For
+                End If
+                Dim title As String = _sections.Values(s)
+                Dim tab As Integer = title.IndexOf(ControlChars.Tab)
+                Dim main As String = If(tab < 0, title, title.Substring(0, tab))
+                If IsVertical Then
+                    Dim text As New Rectangle(_itemMargin + 4, r.Y + 4, r.Width - _itemMargin * 2 - 8, r.Height - 4)
+                    TextRenderer.DrawText(e.Graphics, main, bold, text, _sectionForeColor, flags)
+                    If tab >= 0 Then
+                        Dim w As Integer = TextRenderer.MeasureText(e.Graphics, main, bold, text.Size, flags).Width
+                        Dim subRect As New Rectangle(text.X + w + 10, text.Y, Math.Max(0, text.Width - w - 10), text.Height)
+                        TextRenderer.DrawText(e.Graphics, title.Substring(tab + 1), Me.Font, subRect, _sectionSubColor, flags)
+                    End If
+                Else
+                    ' a narrow column: one line per part -- after 年 and at each space ("2024年 / 3月16日 / 星期六")
+                    main = main.Replace("年", "年" & vbLf).Replace(" ", vbLf).Replace(vbLf & vbLf, vbLf).Trim(ControlChars.Lf)
+                    Dim inner As New Rectangle(r.X + 3, r.Y + _itemMargin + 2, r.Width - 6, r.Height - _itemMargin * 2 - 4)
+                    Dim h As Integer = TextRenderer.MeasureText(e.Graphics, main, Me.Font, New Size(inner.Width, Integer.MaxValue), colFlags).Height
+                    TextRenderer.DrawText(e.Graphics, main, Me.Font, New Rectangle(inner.X, inner.Y, inner.Width, Math.Min(h, inner.Height)), _sectionForeColor, colFlags)
+                    If tab >= 0 AndAlso h + 4 < inner.Height Then
+                        TextRenderer.DrawText(e.Graphics, title.Substring(tab + 1), Me.Font, New Rectangle(inner.X, inner.Y + h + 4, inner.Width, inner.Height - h - 4), _sectionSubColor, colFlags)
+                    End If
+                    Using p As New Pen(Color.FromArgb(70, _sectionSubColor))
+                        e.Graphics.DrawLine(p, r.X, r.Y + _itemMargin, r.X, r.Bottom - _itemMargin)   ' where the day starts
+                    End Using
+                End If
+            Next
+        Finally
+            If _sectionFont Is Nothing Then bold.Dispose()
+        End Try
+    End Sub
+    Private Sub ViewportMouseDown(sender As Object, e As MouseEventArgs)
+        If Not HasSections() Then Return
+        For s As Integer = 0 To _sections.Count - 1
+            Dim r As Rectangle = SectionHeaderRect(s)
+            If Not r.IsEmpty AndAlso r.Contains(e.Location) Then
+                RaiseEvent SectionClick(s, e)
+                Return
+            End If
+        Next
     End Sub
 
     ' ===== 延遲載入 =====
@@ -1082,6 +1462,10 @@ Public Class MediaList
     Private Sub VisibleRange(ByRef first As Integer, ByRef last As Integer)
         first = -1 : last = -1
         If _items.Count = 0 Then Return
+        If HasSections() Then
+            VisibleRangeBySearch(first, last)
+            Return
+        End If
         Dim sz As Size = EffectiveItemSize()
         Dim m As Integer = _itemMargin
         Dim per As Integer = Math.Max(1, _lastPerLine)
@@ -1178,6 +1562,7 @@ Public Class MediaList
         Inherits System.Windows.Forms.Panel
         Public Sub New()
             SetStyle(ControlStyles.Selectable, True)
+            SetStyle(ControlStyles.OptimizedDoubleBuffer Or ControlStyles.AllPaintingInWmPaint, True)   ' 分段標題捲動時不閃
             TabStop = False
         End Sub
     End Class
@@ -1219,7 +1604,10 @@ Public Class MediaList
 
     Friend Sub RaiseItemMouseDown(ByVal item As MediaItem, ByVal e As MouseEventArgs)
         Dim idx As Integer = _items.IndexOf(item)
-        If idx >= 0 Then RaiseEvent ItemMouseDown(idx, e)
+        If idx < 0 Then Return
+        ' 滑鼠中鍵 = Ctrl+左鍵:加入或移出選取(MultiSelect 時)
+        If e.Button = MouseButtons.Middle AndAlso _multiSelect Then SelectByClick(item, toggle:=True)
+        RaiseEvent ItemMouseDown(idx, e)
     End Sub
 
     ' VB6 miItem_ItemDblClick:選取該項(不引發選取事件)→ ItemDblClick → 清單的 DblClick

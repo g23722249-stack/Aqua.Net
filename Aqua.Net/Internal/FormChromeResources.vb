@@ -60,6 +60,31 @@ Namespace Global.Aqua
             End Select
         End Function
 
+        ''' <summary>
+        ''' The VB6 title-bar bitmaps have rounded top corners painted over a magenta key colour
+        ''' (and anti-aliased into it, so the arc pixels are purple-tinted). Rounded windows used to
+        ''' hide them behind their Region, but square windows (RoundCorners = False) showed the
+        ''' magenta. Fill each corner block with the same row's colour just inside it: the bar
+        ''' becomes square, square windows draw their own frame line, rounded windows are still
+        ''' clipped round by their Region -- no magenta or purple fringe either way.
+        ''' </summary>
+        Private Sub SquareTitleCorners(ByVal bmp As Bitmap)
+            Dim isKey = Function(c As Color) c.R > 240 AndAlso c.G < 20 AndAlso c.B > 240
+            Dim k As Integer = 0
+            While k < bmp.Width \ 2 AndAlso isKey(bmp.GetPixel(k, 0))
+                k += 1
+            End While
+            If k = 0 Then Return
+            k = Math.Min(bmp.Width \ 2 - 1, k + 2) ' the arc's anti-aliased pixels sit just past the key run
+            For y As Integer = 0 To Math.Min(bmp.Height - 1, k - 1)
+                Dim leftC = bmp.GetPixel(k, y), rightC = bmp.GetPixel(bmp.Width - 1 - k, y)
+                For x As Integer = 0 To k - 1
+                    bmp.SetPixel(x, y, leftC)
+                    bmp.SetPixel(bmp.Width - 1 - x, y, rightC)
+                Next
+            Next
+        End Sub
+
         Private Function Load(ByVal key As String) As Image
             SyncLock _sync
                 Dim img As Image = Nothing
@@ -69,6 +94,7 @@ Namespace Global.Aqua
                     Using tmp As New Bitmap(s)
                         img = New Bitmap(tmp)
                     End Using
+                    If key.StartsWith("frm_imgTitle") Then SquareTitleCorners(DirectCast(img, Bitmap))
                 End Using
                 _cache(key) = img
                 Return img

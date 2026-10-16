@@ -39,6 +39,11 @@ Namespace Global.Aqua
         Private _hoverBox As FormControlBox? = Nothing
         Private _lastWindowState As FormWindowState = FormWindowState.Normal
 
+        ' last title-bar press, for double-click detection (see IsTitleDoubleClick)
+        Private _titleClickTick As Integer
+        Private _titleClickScreen As Point
+        Private _titleClickValid As Boolean = False
+
         Private _mouseEnter As Boolean = False
         Private _hover As Boolean = False
         Private ReadOnly _hoverTimer As New Timer()
@@ -88,7 +93,67 @@ Namespace Global.Aqua
             AddHandler _pressTimer.Tick, AddressOf OnPressTick
             AddHandler _hoverTimer.Tick, AddressOf OnHoverTick
             AddHandler _resizeThrottle.Tick, AddressOf OnResizeThrottleTick
+            AddHandler FormChrome.DefaultStyleChanged, AddressOf OnDefaultChromeChanged
             UpdateRegion()
+        End Sub
+
+        Private Sub OnDefaultChromeChanged(sender As Object, e As EventArgs)
+            If _chromeStyle = Aqua.ChromeStyle.Default AndAlso Not IsDisposed Then
+                _hoverBox = Nothing : _pressedBox = Nothing
+                Invalidate()
+            End If
+        End Sub
+
+        ' Chrome style (macOS / KDE Plasma) -- see FormChromeStyle.vb
+        Private _chromeStyle As ChromeStyle = Aqua.ChromeStyle.Default
+        ' KDE: the control button being pressed (acts on release, like Breeze)
+        Private _pressedBox As FormControlBox? = Nothing
+
+        ' Title-bar style: Default follows FormChrome.DefaultStyle (macOS unless the application changes it).
+        <Category("外觀")>
+        <DefaultValue(Aqua.ChromeStyle.Default)>
+        Public Property ChromeStyle As ChromeStyle
+            Get
+                Return _chromeStyle
+            End Get
+            Set(value As ChromeStyle)
+                If _chromeStyle = value Then Return
+                _chromeStyle = value
+                _hoverBox = Nothing : _pressedBox = Nothing
+                Invalidate()
+            End Set
+        End Property
+
+        Private ReadOnly Property Kde As Boolean
+            Get
+                Return FormChrome.Resolve(_chromeStyle) = Aqua.ChromeStyle.KdePlasma
+            End Get
+        End Property
+
+        ' The control button under p (only the ones that are turned on).
+        Private Function ControlBoxAt(ByVal p As Point) As FormControlBox?
+            If _closeButton AndAlso ControlBoxRect(FormControlBox.Close).Contains(p) Then Return FormControlBox.Close
+            If _minButton AndAlso ControlBoxRect(FormControlBox.Minimize).Contains(p) Then Return FormControlBox.Minimize
+            If _maxButton AndAlso ControlBoxRect(FormControlBox.Maximize).Contains(p) Then Return FormControlBox.Maximize
+            Return Nothing
+        End Function
+
+        ' Maximize / restore like a native window: maximized stops at the working area (taskbar stays).
+        Private Sub ToggleMaximize()
+            If WindowState = FormWindowState.Maximized Then
+                WindowState = FormWindowState.Normal
+            Else
+                MaximizedBounds = FormChrome.MaximizedArea(Me)
+                WindowState = FormWindowState.Maximized
+            End If
+        End Sub
+
+        Private Sub DoControlBox(ByVal box As FormControlBox)
+            Select Case box
+                Case FormControlBox.Close : Close()
+                Case FormControlBox.Minimize : WindowState = FormWindowState.Minimized
+                Case FormControlBox.Maximize : ToggleMaximize()
+            End Select
         End Sub
 
         Protected Overrides Sub OnHandleCreated(e As EventArgs)
@@ -343,6 +408,7 @@ Namespace Global.Aqua
         End Function
 
         Private Function ControlBoxRect(ByVal box As FormControlBox) As Rectangle
+            If Kde Then Return FormChrome.KdeButtonRect(box, Width, TitleBarHeight, _closeButton, _maxButton)
             Dim x As Integer = ControlBoxStartX
             Dim y As Integer = ControlBoxStartX
             If box = FormControlBox.Close Then Return New Rectangle(x, y, ControlBoxIconSize, ControlBoxIconSize)
@@ -413,6 +479,12 @@ Namespace Global.Aqua
         End Sub
 
         Private Sub DrawControlBox(ByVal g As Graphics, ByVal box As FormControlBox, ByVal active As Boolean)
+            If Kde Then
+                Dim hot = _hoverBox.HasValue AndAlso _hoverBox.Value = box
+                Dim down = _pressedBox.HasValue AndAlso _pressedBox.Value = box
+                FormChrome.DrawKdeButton(g, box, ControlBoxRect(box), active, hot AndAlso Not down, down AndAlso hot, WindowState = FormWindowState.Maximized)
+                Return
+            End If
             Dim hover As Boolean = active AndAlso _hoverBox.HasValue AndAlso _hoverBox.Value = box
             Dim img As Image = FormChromeResources.GetControlButton(active, box, hover)
             If img IsNot Nothing Then g.DrawImage(img, ControlBoxRect(box))
@@ -468,22 +540,29 @@ Namespace Global.Aqua
                 Return
             End If
 
-            If _closeButton AndAlso ControlBoxRect(FormControlBox.Close).Contains(e.Location) Then
-                Close()
-                Return
-            End If
-            If _minButton AndAlso ControlBoxRect(FormControlBox.Minimize).Contains(e.Location) Then
-                WindowState = FormWindowState.Minimized
-                Return
-            End If
-            If _maxButton AndAlso ControlBoxRect(FormControlBox.Maximize).Contains(e.Location) Then
-                WindowState = If(WindowState = FormWindowState.Maximized, FormWindowState.Normal, FormWindowState.Maximized)
+            Dim hitBox = ControlBoxAt(e.Location)
+            If hitBox.HasValue Then
+                If Kde Then
+                    ' Breeze: the button shows pressed and acts on release (moving off cancels)
+                    _pressedBox = hitBox
+                    Capture = True
+                    Invalidate(TitleBarRect())
+                Else
+                    DoControlBox(hitBox.Value)
+                End If
                 Return
             End If
 
             If TitleBarRect().Contains(e.Location) Then
+                ' double-click on the title maximizes / restores, like a native caption (only
+                ' when the window has a maximize button, same as Windows)
+                If _maxButton AndAlso IsTitleDoubleClick(e) Then
+                    ToggleMaximize()
+                    Return
+                End If
                 SoundUtil.PlaySound(_soundClick)
-                NativeWindowDrag.BeginDragMove(Handle)
+                ' a maximized window stays put (same as AquaForm)
+                If WindowState <> FormWindowState.Maximized Then NativeWindowDrag.BeginDragMove(Handle)
                 Return
             End If
 
@@ -495,9 +574,41 @@ Namespace Global.Aqua
             End If
         End Sub
 
+        ''' <summary>Whether this title-bar press completes a double-click. Tracked by hand because the
+        ''' first press goes into the OS move loop (BeginDragMove), which swallows the button-up, so
+        ''' WinForms doesn't reliably report the second press as a double-click (e.Clicks = 2).
+        ''' Uses the system double-click time and distance; a recognised double-click resets the
+        ''' tracking so a third press starts over instead of toggling again.</summary>
+        Private Function IsTitleDoubleClick(ByVal e As MouseEventArgs) As Boolean
+            Dim now As Integer = Environment.TickCount
+            Dim pt As Point = PointToScreen(e.Location)
+            Dim area As Size = SystemInformation.DoubleClickSize
+            Dim isDouble As Boolean = e.Clicks >= 2 OrElse
+                (_titleClickValid AndAlso
+                 now - _titleClickTick <= SystemInformation.DoubleClickTime AndAlso
+                 Math.Abs(pt.X - _titleClickScreen.X) <= area.Width \ 2 AndAlso
+                 Math.Abs(pt.Y - _titleClickScreen.Y) <= area.Height \ 2)
+            If isDouble Then
+                _titleClickValid = False
+            Else
+                _titleClickValid = True
+                _titleClickTick = now
+                _titleClickScreen = pt
+            End If
+            Return isDouble
+        End Function
+
         Protected Overrides Sub OnMouseUp(e As MouseEventArgs)
             MyBase.OnMouseUp(e)
             _pressTimer.Stop()
+            If _pressedBox.HasValue Then
+                Dim box = _pressedBox.Value
+                _pressedBox = Nothing
+                Capture = False
+                Invalidate(TitleBarRect())
+                If ControlBoxRect(box).Contains(e.Location) Then DoControlBox(box)
+                Return
+            End If
             If _resizing Then
                 _resizing = False
                 Capture = False
@@ -530,11 +641,8 @@ Namespace Global.Aqua
                 Return
             End If
 
-            Dim newHoverBox As FormControlBox? = Nothing
-            If _closeButton AndAlso ControlBoxRect(FormControlBox.Close).Contains(e.Location) Then newHoverBox = FormControlBox.Close
-            If _minButton AndAlso ControlBoxRect(FormControlBox.Minimize).Contains(e.Location) Then newHoverBox = FormControlBox.Minimize
-            If _maxButton AndAlso ControlBoxRect(FormControlBox.Maximize).Contains(e.Location) Then newHoverBox = FormControlBox.Maximize
-            If newHoverBox <> _hoverBox Then
+            Dim newHoverBox As FormControlBox? = ControlBoxAt(e.Location)
+            If Not Nullable.Equals(newHoverBox, _hoverBox) Then
                 _hoverBox = newHoverBox
                 Invalidate()
             End If
@@ -603,6 +711,21 @@ Namespace Global.Aqua
             Invalidate()
         End Sub
 
+        Private Sub InitializeComponent()
+            Me.SuspendLayout()
+            '
+            'iForm
+            '
+            Me.ClientSize = New System.Drawing.Size(284, 261)
+            Me.Name = "iForm"
+            Me.ResumeLayout(False)
+
+        End Sub
+
+        Private Sub iForm_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+
+        End Sub
+
         Private Shared Function ButtonBits(ByVal b As MouseButtons) As Integer
             Select Case b
                 Case MouseButtons.Left : Return 1
@@ -622,6 +745,7 @@ Namespace Global.Aqua
 
         Protected Overrides Sub Dispose(disposing As Boolean)
             If disposing Then
+                RemoveHandler FormChrome.DefaultStyleChanged, AddressOf OnDefaultChromeChanged
                 _hoverTimer.Stop() : _hoverTimer.Dispose()
                 _pressTimer.Stop() : _pressTimer.Dispose()
                 _resizeThrottle.Stop() : _resizeThrottle.Dispose()

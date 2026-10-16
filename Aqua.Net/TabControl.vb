@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 Imports System.Collections.Generic
@@ -22,6 +22,7 @@ Namespace Global.Aqua
         Private Const TopBottomStrip As Integer = 27   ' native tab surface height
         Private Const LeftRightStrip As Integer = 84   ' native tab surface width
         Private Const TabPad As Integer = 20           ' text padding inside a tab
+        Private Const MinTabPad As Integer = 6         ' least padding when titles are squeezed
         Private Const BorderPad As Integer = 3
 
         Private _selIndex As Integer = -1
@@ -132,6 +133,27 @@ Namespace Global.Aqua
         Private Sub ResetTabStripPadding()
             TabStripPadding = Padding.Empty
         End Sub
+
+        Private _groupBreaks As Integer() = New Integer() {}
+        Private Const GroupGap As Integer = 6
+
+        ''' <summary>分組：這些索引的標籤前面畫一道假空隙（交界蓋成背景色，標籤在上／下時）；不佔寬度，標題大小不受影響。</summary>
+        <Browsable(False), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
+        Public Property GroupBreaks As Integer()
+            Get
+                Return _groupBreaks
+            End Get
+            Set(value As Integer())
+                _groupBreaks = If(value, New Integer() {})
+                PerformLayoutPages()
+                Invalidate()
+            End Set
+        End Property
+
+        ''' <summary>第 i 個標籤前面要不要分組（只算 1..n-1）。</summary>
+        Private Function IsGroupBreak(ByVal i As Integer) As Boolean
+            Return i > 0 AndAlso i < _tabPages.Count AndAlso Array.IndexOf(_groupBreaks, i) >= 0
+        End Function
 
         <DefaultValue(True)>
         Public Property ShowTabLine As Boolean
@@ -262,6 +284,31 @@ Namespace Global.Aqua
             End If
         End Function
 
+        Private _squeezeFont As Font, _squeezeKey As String
+
+        ''' <summary>The font for tab titles: the control's font, or a smaller one (down to 7pt) when the
+        ''' bare titles of a horizontal strip would not fit at full size (long translated titles).</summary>
+        Private Function TitleFont(stripWidth As Integer) As Font
+            If Not IsHorizontalTabs OrElse _tabPages.Count = 0 Then Return Font
+            Dim key As String = stripWidth.ToString() & "|" & Font.Name & "|" & Font.Size.ToString()
+            For Each p In _tabPages
+                key &= "|" & p.Title
+            Next
+            If key = _squeezeKey Then Return If(_squeezeFont, Font)
+            _squeezeKey = key
+            If _squeezeFont IsNot Nothing Then _squeezeFont.Dispose() : _squeezeFont = Nothing
+            Dim need As Integer = 0
+            For Each p In _tabPages
+                need += TextRenderer.MeasureText(p.Title, Font).Width + MinTabPad
+            Next
+            If need <= stripWidth Then Return Font
+            Dim avail As Integer = stripWidth - _tabPages.Count * MinTabPad
+            Dim size As Single = Math.Max(7.0F, Font.Size * Math.Max(1, avail) / CSng(need - _tabPages.Count * MinTabPad))
+            If size >= Font.Size Then Return Font
+            _squeezeFont = New Font(Font.FontFamily, size, Font.Style, Font.Unit)
+            Return _squeezeFont
+        End Function
+
         Private Function TabRects() As Rectangle()
             Dim n As Integer = _tabPages.Count
             Dim rects(Math.Max(0, n - 1)) As Rectangle
@@ -269,16 +316,30 @@ Namespace Global.Aqua
             Dim hr As Rectangle = StripRect()
 
             If IsHorizontalTabs Then
-                Dim widths(n - 1) As Integer
-                Dim total As Integer = 0
+                Dim widths(n - 1) As Integer, texts(n - 1) As Integer
+                Dim total As Integer = 0, textTotal As Integer = 0
+                ' 分組用假空隙（畫的時候把交界蓋成背景色），不佔寬度
+                Dim stripW As Integer = hr.Width
+                Dim f As Font = TitleFont(hr.Width)
                 For i = 0 To n - 1
-                    widths(i) = TextRenderer.MeasureText(_tabPages(i).Title, Font).Width + TabPad
+                    texts(i) = TextRenderer.MeasureText(_tabPages(i).Title, f).Width
+                    widths(i) = texts(i) + TabPad
                     total += widths(i)
+                    textTotal += texts(i) + MinTabPad
                 Next
                 If total <= 0 Then total = 1
+                ' Proportional widths would cut some title short but the bare titles still fit:
+                ' give every tab its title width and share out what is left evenly.
+                Dim fitText As Boolean = False
+                If total > stripW AndAlso textTotal <= stripW Then
+                    For i = 0 To n - 1
+                        If CInt(widths(i) / CDbl(total) * stripW) < texts(i) + MinTabPad Then fitText = True : Exit For
+                    Next
+                End If
+                Dim spare As Integer = If(fitText, (stripW - textTotal) \ n, 0)
                 Dim x As Integer = hr.Left
                 For i = 0 To n - 1
-                    Dim w As Integer = CInt(widths(i) / CDbl(total) * hr.Width)
+                    Dim w As Integer = If(fitText, texts(i) + MinTabPad + spare, CInt(widths(i) / CDbl(total) * stripW))
                     If i = n - 1 Then w = hr.Right - x
                     rects(i) = New Rectangle(x, hr.Top, w, hr.Height)
                     x += w
@@ -348,22 +409,40 @@ Namespace Global.Aqua
                 If i <> _selIndex Then DrawTab(g, i, rects(i))
             Next
             If _selIndex >= 0 AndAlso _selIndex < _tabPages.Count Then DrawTab(g, _selIndex, rects(_selIndex))
+            ' 分組：交界兩邊各 3 像素蓋成背景色，看起來像空隙（不佔寬度，標題大小不受影響）
+            If IsHorizontalTabs Then
+                For i = 1 To rects.Length - 1
+                    If Not IsGroupBreak(i) Then Continue For
+                    Dim gapRect As New Rectangle(rects(i).Left - GroupGap \ 2, rects(i).Top, GroupGap, rects(i).Height - 1)
+                    ' 跟標籤列的底色一樣：透出父容器的背景（不是自己的 BackColor，否則在灰色面板上會是一塊白框）
+                    If Parent IsNot Nothing Then
+                        Dim st As Drawing2D.GraphicsState = g.Save()
+                        g.SetClip(gapRect)
+                        ButtonRenderer.DrawParentBackground(g, ClientRectangle, Me)
+                        g.Restore(st)
+                    Else
+                        Using bg As New SolidBrush(BackColor)
+                            g.FillRectangle(bg, gapRect)
+                        End Using
+                    End If
+                Next
+            End If
         End Sub
 
         Private Sub DrawTab(g As Graphics, ByVal index As Integer, ByVal rect As Rectangle)
             If rect.Width <= 0 OrElse rect.Height <= 0 Then Return
             Dim selected As Boolean = (index = _selIndex)
-            Dim surf As Image = PageResources.GetTabSurface(_alignment, _color, selected)
+            Dim surf As Image = Theme.Skin(PageResources.GetTabSurface(_alignment, _color, selected))
             If surf IsNot Nothing Then Skin.DrawStretch(g, surf, rect, IsHorizontalTabs)
 
             Dim flags As TextFormatFlags = TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or
                                            TextFormatFlags.SingleLine Or TextFormatFlags.EndEllipsis
-            TextRenderer.DrawText(g, _tabPages(index).Title, Font, rect, ForeColor, flags)
+            TextRenderer.DrawText(g, _tabPages(index).Title, TitleFont(StripRect().Width), rect, If(Theme.Dark, Theme.TextColor, ForeColor), flags)
         End Sub
 
         Private Sub DrawContentBorder(g As Graphics, ByVal rect As Rectangle)
             If rect.Width <= 2 OrElse rect.Height <= 2 Then Return
-            Dim baseColor As Color = ColorUtil.OleToColor(12434877)   ' gc_lngBorderColor RGB(189,189,189)
+            Dim baseColor As Color = Theme.Map(ColorUtil.OleToColor(12434877))   ' gc_lngBorderColor RGB(189,189,189)
             Using p As New Pen(baseColor, 2)
                 g.DrawRectangle(p, rect.Left + 1, rect.Top + 1, rect.Width - 2, rect.Height - 2)
             End Using
@@ -400,6 +479,16 @@ Namespace Global.Aqua
         ''' <summary>Selects the tab whose head is under <paramref name="clientPt"/>; False when there
         ''' is none. Also used by AquaTabControlDesigner: the designer doesn't pass clicks on to
         ''' OnMouseDown, even where GetHitTest says the header is "live".</summary>
+        ''' <summary>The index of the tab whose head is under <paramref name="clientPt"/>; -1 when there is none
+        ''' (e.g. to show a different help text for each tab).</summary>
+        Public Function TabIndexAt(ByVal clientPt As Point) As Integer
+            Dim rects As Rectangle() = TabRects()
+            For i = 0 To rects.Length - 1
+                If rects(i).Contains(clientPt) Then Return i
+            Next
+            Return -1
+        End Function
+
         Friend Function SelectTabAt(ByVal clientPt As Point) As Boolean
             Dim rects As Rectangle() = TabRects()
             For i = 0 To rects.Length - 1

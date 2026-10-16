@@ -82,6 +82,9 @@
     <EmbeddedResource Include="Resources\Menu\*.bmp">
       <LogicalName>Aqua.MenuRes.%(Filename).bmp</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Menu\*.png">
+      <LogicalName>Aqua.MenuRes.%(Filename).png</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="Resources\FormChrome\*.bmp">
       <LogicalName>Aqua.FormChromeRes.%(Filename).bmp</LogicalName>
     </EmbeddedResource>
