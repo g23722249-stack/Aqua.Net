@@ -1,7 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net35;net8.0-windows</TargetFrameworks>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>Aqua</RootNamespace>
     <AssemblyName>Aqua.Net</AssemblyName>
     <OptionStrict>On</OptionStrict>
@@ -11,16 +12,11 @@
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Company>TechnoSoft</Company>
     <Product>Aqua Control Technical (.NET)</Product>
-    <Description>TechnoSoft - Aqua Control Technical, ported to WinForms (net35 / net8).</Description>
-  </PropertyGroup>
-
-  <!-- .NET 8 (Windows) uses the Desktop SDK's WinForms switch. -->
-  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
-    <UseWindowsForms>true</UseWindowsForms>
+    <Description>TechnoSoft - Aqua Control Technical, ported to WinForms (net8).</Description>
   </PropertyGroup>
 
   <!-- Image resources carved from the VB6 frx/ctx binaries, preserved verbatim.
-       Explicit LogicalName keeps the manifest names stable across net35/net8. -->
+       Explicit LogicalName keeps the manifest names stable. -->
   <ItemGroup>
     <EmbeddedResource Include="Resources\CheckMarks\*.ico">
       <LogicalName>Aqua.CheckMarks.%(Filename).ico</LogicalName>
@@ -142,34 +138,11 @@
     </EmbeddedResource>
   </ItemGroup>
 
-  <!-- MediaViewerControl: net8 plays video via LibVLCSharp; net35 via Windows Media Player COM. -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+  <!-- MediaViewerControl plays video via LibVLCSharp. -->
+  <ItemGroup>
     <PackageReference Include="LibVLCSharp" Version="3.9.3" />
     <PackageReference Include="LibVLCSharp.WinForms" Version="3.9.3" />
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.21" />
   </ItemGroup>
-  <ItemGroup Condition="'$(TargetFramework)' == 'net35'">
-    <Reference Include="AxInterop.WMPLib">
-      <HintPath>Interop\AxInterop.WMPLib.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
-    <Reference Include="Interop.WMPLib">
-      <HintPath>Interop\Interop.WMPLib.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
-  </ItemGroup>
-
-  <!-- .NET Framework 3.5: reference WinForms/Drawing explicitly and supply the
-       reference assemblies via NuGet so the project builds without Visual Studio. -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net35'">
-    <Reference Include="System" />
-    <Reference Include="System.Data" />
-    <Reference Include="System.Drawing" />
-    <Reference Include="System.Windows.Forms" />
-    <Reference Include="System.Xml" />
-    <Reference Include="System.Design" />
-    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net35" Version="1.0.3" PrivateAssets="all" />
-  </ItemGroup>
-
 
 </Project>

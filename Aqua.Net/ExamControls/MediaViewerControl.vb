@@ -20,17 +20,13 @@ Public Class MediaViewerControl
     Private _isVideo As Boolean
 
     ' 影片播放器；採延遲建立，只有使用者點擊縮圖要求播放時才建立。
-    ' net8 走 LibVLCSharp，.NET Framework 走 Windows Media Player COM。
-#If NETFRAMEWORK Then
-    Private wmpPlayer As AxWMPLib.AxWindowsMediaPlayer
-#Else
+    ' 以 LibVLCSharp 播放。
     Private _mediaPlayer As LibVLCSharp.Shared.MediaPlayer
     Private _videoView As LibVLCSharp.WinForms.VideoView
     ' 所有檢視器共用一個 LibVLC(建立時要載入全部外掛,第一次約 3 秒、之後每次也要 0.3 秒),
     ' 在背景預先建立(PreloadVideoEngine),點擊播放時就不必在 UI 執行緒上等。程式結束才釋放。
     Private Shared ReadOnly _vlcLock As New Object
     Private Shared _vlcTask As System.Threading.Tasks.Task(Of LibVLCSharp.Shared.LibVLC)
-#End If
 
     ' 影片副檔名
     Private Shared ReadOnly ImageExts As String() = {".jpg", ".jpeg", ".png", ".bmp", ".gif"}
@@ -101,11 +97,7 @@ Public Class MediaViewerControl
     ''' <summary>停止播放中的影片並換回縮圖(MediaList 釋放捲出畫面的項目視窗前呼叫:
     ''' 播放器綁在原生視窗上)。沒有在播放時不做事。</summary>
     Friend Sub StopPlayback()
-#If NETFRAMEWORK Then
-        If wmpPlayer Is Nothing Then Return
-#Else
         If _mediaPlayer Is Nothing AndAlso _videoView Is Nothing Then Return
-#End If
         DisposePlayer()
         LoadMedia()
     End Sub
@@ -322,20 +314,14 @@ Public Class MediaViewerControl
         End If
     End Sub
 
-    ' 播放器是否已建立 (兩種實作共用的判斷)
+    ' 播放器是否已建立
     Private Function IsPlayerCreated() As Boolean
-#If NETFRAMEWORK Then
-        
-Return wmpPlayer IsNot Nothing
-#Else
         Return _mediaPlayer IsNot Nothing
-#End If
     End Function
 
     ''' <summary>在背景預先載入影片播放引擎(LibVLC),讓第一次點擊播放不必等外掛載入。
-    ''' 可重複呼叫;顯示影片縮圖時會自動呼叫,程式也可在啟動後先呼叫。.NET Framework 版不做事。</summary>
+    ''' 可重複呼叫;顯示影片縮圖時會自動呼叫,程式也可在啟動後先呼叫。</summary>
     Public Shared Sub PreloadVideoEngine()
-#If Not NETFRAMEWORK Then
         SyncLock _vlcLock
             If _vlcTask IsNot Nothing AndAlso Not _vlcTask.IsFaulted Then Return
             _vlcTask = System.Threading.Tasks.Task.Run(
@@ -344,10 +330,8 @@ Return wmpPlayer IsNot Nothing
                     Return New LibVLCSharp.Shared.LibVLC()
                 End Function)
         End SyncLock
-#End If
     End Sub
 
-#If Not NETFRAMEWORK Then
     ' 共用的 LibVLC;背景還在載入時等它完成(載入失敗則重試一次並把例外丟出,與以前相同)
     Private Shared Function SharedLibVlc() As LibVLCSharp.Shared.LibVLC
         PreloadVideoEngine()
@@ -357,32 +341,11 @@ Return wmpPlayer IsNot Nothing
         End SyncLock
         Return t.GetAwaiter().GetResult()
     End Function
-#End If
 
     ' 建立播放器並開始播放
     Private Sub StartPlayback()
         If String.IsNullOrEmpty(_fileName) OrElse Not File.Exists(_fileName) Then Return
 
-#If NETFRAMEWORK Then
-        wmpPlayer = New AxWMPLib.AxWindowsMediaPlayer()
-        wmpPlayer.Dock = DockStyle.Fill
-        Me.Controls.Add(wmpPlayer)                 ' Add 之後 ActiveX 控制代碼才建立
-        wmpPlayer.uiMode = "none"                  ' 隱藏內建控制列，改由點擊操作
-        wmpPlayer.stretchToFit = True
-        wmpPlayer.enableContextMenu = False
-        wmpPlayer.settings.volume = _volume
-
-        ' 播放器上點擊 → 切換 播放 / 暫停
-        AddHandler wmpPlayer.ClickEvent, AddressOf OnPlayerClick
-        AddHandler wmpPlayer.PlayStateChange, AddressOf OnWmpPlayStateChange
-        AddHandler wmpPlayer.OpenStateChange, AddressOf OnWmpOpenStateChange
-
-        ' 播放縮圖已無用，釋放以省 GDI(先留一份給拖曳用:播放中/暫停時仍可把媒體拖出)
-        SetThumb(Me.BackgroundImage)
-        DisposeBackgroundImage()
-
-        wmpPlayer.URL = _fileName                  ' 預設 autoStart，設定 URL 即開始播放
-#Else
         _videoView = New LibVLCSharp.WinForms.VideoView() With {.Dock = DockStyle.Fill}
         Me.Controls.Add(_videoView)                ' Add 之後才建立 handle
         Dim libVlc As LibVLCSharp.Shared.LibVLC = SharedLibVlc()   ' 已預先載入時立即取得
@@ -411,21 +374,9 @@ Return wmpPlayer IsNot Nothing
             _mediaPlayer.Play(media)
         End Using
 
-#End If
     End Sub
 
     ' 播放器上點擊 → 切換 播放 / 暫停
-#If NETFRAMEWORK Then
-   Private Sub OnPlayerClick(sender As Object, e As AxWMPLib._WMPOCXEvents_ClickEvent)
-        RaiseMediaClicked()
-        If wmpPlayer Is Nothing Then Return
-        If wmpPlayer.playState = WMPLib.WMPPlayState.wmppsPlaying Then
-            wmpPlayer.Ctlcontrols.pause()
-        Else
-            wmpPlayer.Ctlcontrols.play()
-        End If
-    End Sub
-#Else
  Private Sub OnPlayerMouseClick(sender As Object, e As MouseEventArgs)
         If e.Button <> MouseButtons.Left Then Return   ' 右鍵是選單,不當點擊(也不切換播放)
         RaiseMediaClicked()
@@ -438,7 +389,6 @@ Return wmpPlayer IsNot Nothing
     End Sub
 
     
-#End If
 
     ' 設定/釋放保留用縮圖(獨立於背景圖,供拖曳影像使用)
     Private Sub SetThumb(ByVal img As Image)
@@ -460,23 +410,6 @@ Return wmpPlayer IsNot Nothing
 
     ' 釋放播放器
     Private Sub DisposePlayer()
-#If NETFRAMEWORK Then
-        
-  If wmpPlayer IsNot Nothing Then
-            RemoveHandler wmpPlayer.ClickEvent, AddressOf OnPlayerClick
-            RemoveHandler wmpPlayer.PlayStateChange, AddressOf OnWmpPlayStateChange
-            RemoveHandler wmpPlayer.OpenStateChange, AddressOf OnWmpOpenStateChange
-            Try
-                wmpPlayer.Ctlcontrols.stop()
-                wmpPlayer.close()
-            Catch
-                ' 忽略關閉時的例外
-            End Try
-            Me.Controls.Remove(wmpPlayer)
-            wmpPlayer.Dispose()
-            wmpPlayer = Nothing
-        End If
-#Else
       If _videoView IsNot Nothing Then
             RemoveHandler _videoView.MouseClick, AddressOf OnPlayerMouseClick
         End If
@@ -502,7 +435,6 @@ Return wmpPlayer IsNot Nothing
             _mediaPlayer.Dispose()
             _mediaPlayer = Nothing
         End If
-#End If
     End Sub
 
     ' ===== 影片播放控制(VB6 MediaPlayer:Play / Pause / Stop / PlayState / Duration /
@@ -544,34 +476,17 @@ Return wmpPlayer IsNot Nothing
         End Get
         Set(value As Integer)
             _volume = Math.Max(0, Math.Min(100, value))
-#If NETFRAMEWORK Then
-            If wmpPlayer IsNot Nothing Then wmpPlayer.settings.volume = _volume
-#Else
             If _mediaPlayer IsNot Nothing Then _mediaPlayer.Volume = _volume
-#End If
         End Set
     End Property
 
     <Browsable(False)>
     Public ReadOnly Property PlayState As MediaPlayState
         Get
-#If NETFRAMEWORK Then
-            If wmpPlayer Is Nothing Then Return MediaPlayState.Stopped
-            Try
-                Select Case wmpPlayer.playState
-                    Case WMPLib.WMPPlayState.wmppsPlaying : Return MediaPlayState.Playing
-                    Case WMPLib.WMPPlayState.wmppsPaused : Return MediaPlayState.Paused
-                    Case Else : Return MediaPlayState.Stopped
-                End Select
-            Catch
-                Return MediaPlayState.Stopped
-            End Try
-#Else
             If _mediaPlayer Is Nothing Then Return MediaPlayState.Stopped
             If _mediaPlayer.IsPlaying Then Return MediaPlayState.Playing
             If _mediaPlayer.State = LibVLCSharp.Shared.VLCState.Paused Then Return MediaPlayState.Paused
             Return MediaPlayState.Stopped
-#End If
         End Get
     End Property
 
@@ -579,13 +494,8 @@ Return wmpPlayer IsNot Nothing
     <Browsable(False)>
     Public ReadOnly Property Duration As Double
         Get
-#If NETFRAMEWORK Then
-            If wmpPlayer Is Nothing OrElse wmpPlayer.currentMedia Is Nothing Then Return 0
-            Return wmpPlayer.currentMedia.duration
-#Else
             If _mediaPlayer Is Nothing OrElse _mediaPlayer.Length <= 0 Then Return 0
             Return _mediaPlayer.Length / 1000.0
-#End If
         End Get
     End Property
 
@@ -593,20 +503,11 @@ Return wmpPlayer IsNot Nothing
     <Browsable(False)>
     Public Property CurrentPosition As Double
         Get
-#If NETFRAMEWORK Then
-            If wmpPlayer Is Nothing Then Return 0
-            Return wmpPlayer.Ctlcontrols.currentPosition
-#Else
             If _mediaPlayer Is Nothing OrElse _mediaPlayer.Time < 0 Then Return 0
             Return _mediaPlayer.Time / 1000.0
-#End If
         End Get
         Set(value As Double)
-#If NETFRAMEWORK Then
-            If wmpPlayer IsNot Nothing Then wmpPlayer.Ctlcontrols.currentPosition = Math.Max(0, value)
-#Else
             If _mediaPlayer IsNot Nothing AndAlso _mediaPlayer.IsSeekable Then _mediaPlayer.Time = CLng(Math.Max(0, value) * 1000)
-#End If
         End Set
     End Property
 
@@ -614,15 +515,10 @@ Return wmpPlayer IsNot Nothing
     <Browsable(False)>
     Public ReadOnly Property VideoSize As Size
         Get
-#If NETFRAMEWORK Then
-            If wmpPlayer Is Nothing OrElse wmpPlayer.currentMedia Is Nothing Then Return Size.Empty
-            Return New Size(wmpPlayer.currentMedia.imageSourceWidth, wmpPlayer.currentMedia.imageSourceHeight)
-#Else
             If _mediaPlayer Is Nothing Then Return Size.Empty
             Dim w As UInteger, h As UInteger
             If Not _mediaPlayer.Size(0UI, w, h) Then Return Size.Empty
             Return New Size(CInt(w), CInt(h))
-#End If
         End Get
     End Property
 
@@ -633,32 +529,20 @@ Return wmpPlayer IsNot Nothing
             StartPlayback()
             Return
         End If
-#If NETFRAMEWORK Then
-        wmpPlayer.Ctlcontrols.play()
-#Else
         If _mediaPlayer.State = LibVLCSharp.Shared.VLCState.Ended Then _mediaPlayer.Stop()
         _mediaPlayer.Play()
-#End If
     End Sub
 
     Public Sub Pause()
-#If NETFRAMEWORK Then
-        If wmpPlayer IsNot Nothing Then wmpPlayer.Ctlcontrols.pause()
-#Else
         If _mediaPlayer IsNot Nothing AndAlso _mediaPlayer.IsPlaying Then _mediaPlayer.SetPause(True)
-#End If
     End Sub
 
     ''' <summary>停止並回到開頭(播放器保留,可再 Play)。</summary>
     Public Sub [Stop]()
-#If NETFRAMEWORK Then
-        If wmpPlayer IsNot Nothing Then wmpPlayer.Ctlcontrols.stop()
-#Else
         If _mediaPlayer IsNot Nothing Then
             _mediaPlayer.Stop()
             RaiseEvent PlayStateChanged(Me, EventArgs.Empty)
         End If
-#End If
     End Sub
 
     ' 在 UI 執行緒執行(控制項已釋放則略過)
@@ -672,26 +556,6 @@ Return wmpPlayer IsNot Nothing
         End Try
     End Sub
 
-#If NETFRAMEWORK Then
-    Private Sub OnWmpPlayStateChange(sender As Object, e As AxWMPLib._WMPOCXEvents_PlayStateChangeEvent)
-        Const wmppsMediaEnded As Integer = 8
-        If e.newState = wmppsMediaEnded AndAlso Not _autoRewind Then
-            ' WMP 播完會自己回到開頭;不回頭時停在最後
-            RunOnUi(Sub()
-                        Try
-                            wmpPlayer.Ctlcontrols.currentPosition = wmpPlayer.currentMedia.duration
-                        Catch
-                        End Try
-                    End Sub)
-        End If
-        RaiseEvent PlayStateChanged(Me, EventArgs.Empty)
-    End Sub
-
-    Private Sub OnWmpOpenStateChange(sender As Object, e As AxWMPLib._WMPOCXEvents_OpenStateChangeEvent)
-        Const wmposMediaOpen As Integer = 13
-        If e.newState = wmposMediaOpen Then RaiseEvent MediaOpened(Me, EventArgs.Empty)
-    End Sub
-#Else
     Private Sub OnVlcStateEvent(sender As Object, e As EventArgs)
         RunOnUi(Sub() RaiseEvent PlayStateChanged(Me, EventArgs.Empty))
     End Sub
@@ -708,7 +572,6 @@ Return wmpPlayer IsNot Nothing
     Private Sub OnVlcLengthChanged(sender As Object, e As LibVLCSharp.Shared.MediaPlayerLengthChangedEventArgs)
         RunOnUi(Sub() RaiseEvent MediaOpened(Me, EventArgs.Empty))
     End Sub
-#End If
 
     ' ===== 拖放(Drag & Drop) =====
 
@@ -825,26 +688,13 @@ Return wmpPlayer IsNot Nothing
 
     ' 影片是否正在播放
     Private Function IsPlaying() As Boolean
-#If NETFRAMEWORK Then
-        If wmpPlayer Is Nothing Then Return False
-        Try
-            Return wmpPlayer.playState = WMPLib.WMPPlayState.wmppsPlaying
-        Catch
-            Return False
-        End Try
-
-#Else
         
 Return _mediaPlayer IsNot Nothing AndAlso _mediaPlayer.IsPlaying
 
-#End If
     End Function
 
-    ' 擷取目前影格作為拖曳縮圖(暫停中)。VLC 以 TakeSnapshot;WMP 無簡易方式則沿用既有縮圖。
+    ' 擷取目前影格作為拖曳縮圖(暫停中)。以 VLC 的 TakeSnapshot 擷取,失敗則沿用既有縮圖。
     Private Sub CaptureCurrentFrameToThumb()
-#If NETFRAMEWORK Then
-
-#else
         If _mediaPlayer Is Nothing Then Return
         Dim tmp As String = Path.Combine(Path.GetTempPath(), "mvc_" & Guid.NewGuid().ToString("N") & ".png")
         Try
@@ -870,7 +720,6 @@ Return _mediaPlayer IsNot Nothing AndAlso _mediaPlayer.IsPlaying
             Catch
             End Try
         End Try
-#End If
     End Sub
 
     Private Sub OnMediaDragEnter(sender As Object, e As DragEventArgs)

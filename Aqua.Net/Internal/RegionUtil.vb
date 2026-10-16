@@ -9,7 +9,7 @@ Imports System.Runtime.InteropServices
 ' Managed replacement for the VB6 Module\LibRegion.bas rounded-corner window regions.
 ' The VB6 code used gdi32 CreateRoundRectRgn(0,0,w+1,h+1,border,border) + SetWindowRgn.
 ' Here we build an equivalent GraphicsPath-based Region and assign it to Control.Region,
-' which works identically on net35 and net8 without any P/Invoke.
+' without any P/Invoke.
 Namespace Global.Aqua
 
     Friend Module RegionUtil
@@ -105,7 +105,7 @@ Namespace Global.Aqua
             Dim data As BitmapData = bitmap.LockBits(New Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb)
             Try
                 For y As Integer = 0 To h - 1
-                    Marshal.Copy(New IntPtr(data.Scan0.ToInt64() + CLng(y) * data.Stride), px, y * w, w)   ' (no IntPtr.Add on net35)
+                    Marshal.Copy(data.Scan0 + y * data.Stride, px, y * w, w)
                 Next
             Finally
                 bitmap.UnlockBits(data)

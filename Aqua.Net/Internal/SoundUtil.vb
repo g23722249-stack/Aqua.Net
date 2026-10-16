@@ -20,7 +20,7 @@ Namespace Global.Aqua
 
         ''' <summary>Plays a .wav (or .mid) file asynchronously; silently does nothing for blank/missing/unsupported files.</summary>
         Public Sub PlaySound(ByVal fileName As String)
-            If String.IsNullOrEmpty(fileName) OrElse fileName.Trim().Length = 0 Then Return   ' IsNullOrWhiteSpace needs .NET 4.0+; this project also targets net35
+            If String.IsNullOrWhiteSpace(fileName) Then Return
             Dim ext As String = IO.Path.GetExtension(fileName).TrimStart("."c).ToUpperInvariant()
             If ext <> "WAV" AndAlso ext <> "MID" Then Return
             If Not IO.File.Exists(fileName) Then Return

@@ -48,7 +48,7 @@ Namespace Global.Aqua
         Public Function GetScrollState(ByVal handle As IntPtr, ByVal bar As Integer) As SCROLLINFO
             Dim si As New SCROLLINFO()
             If handle = IntPtr.Zero Then Return si
-            si.cbSize = Marshal.SizeOf(GetType(SCROLLINFO))   ' non-generic overload: the generic Of T one needs .NET 4.5.1+, this project also targets net35
+            si.cbSize = Marshal.SizeOf(Of SCROLLINFO)()
             si.fMask = SIF_ALL
             GetScrollInfo(handle, bar, si)
             Return si

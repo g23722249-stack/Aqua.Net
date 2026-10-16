@@ -81,10 +81,9 @@ Namespace Global.Aqua
             Return Path.Combine(Environment.GetEnvironmentVariable("USERPROFILE"), "Downloads")
         End Function
 
-        ''' <summary>net35's Environment.SpecialFolder here doesn't carry every modern member (e.g.
-        ''' MyVideos/UserProfile) -- the pre-Vista "Shell Folders" registry key both target
-        ''' frameworks (and VB6's own Registry-based DeskTop.ctl) can read directly sidesteps that,
-        ''' with an env-var-relative guess if the value is missing entirely.</summary>
+        ''' <summary>Reads the pre-Vista "Shell Folders" registry key directly, as VB6's own Registry-based
+        ''' DeskTop.ctl did (kept from when this also targeted net35, whose SpecialFolder lacked
+        ''' MyVideos/UserProfile), with an env-var-relative guess if the value is missing entirely.</summary>
         Private Function GetShellFolderPath(ByVal valueName As String, ByVal fallbackRelativeToProfile As String) As String
             Try
                 Using key As Microsoft.Win32.RegistryKey = Microsoft.Win32.Registry.CurrentUser.OpenSubKey("Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders")

@@ -114,7 +114,7 @@ Namespace Global.Aqua
                 Return _pattern
             End Get
             Set(value As String)
-                Dim p As String = If(String.IsNullOrEmpty(value) OrElse value.Trim().Length = 0, "*", value)   ' IsNullOrWhiteSpace needs .NET 4.0+; this project also targets net35
+                Dim p As String = If(String.IsNullOrWhiteSpace(value), "*", value)
                 If _pattern = p Then Return
                 _pattern = p
                 RefreshFiles()
