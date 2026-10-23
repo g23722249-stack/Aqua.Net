@@ -263,6 +263,46 @@ Public Class MediaViewerControl
             End Try
         End Function
 
+        Private Const ExifThumbnailTag As Integer = &H501B   ' PropertyTagThumbnailData:相機寫入的小縮圖(多半 160x120 的 JPEG)
+
+        ''' <summary>相片內嵌的 EXIF 縮圖,縮小到放進 <paramref name="box"/>:只讀檔頭與縮圖,不解碼整張相片
+        ''' (約 1ms,整張解碼要 50ms 以上)。沒有內嵌縮圖、或比例與原圖不同(相機補黑邊、被裁切或轉向過)時
+        ''' 傳回 Nothing。<paramref name="sharp"/>:內嵌縮圖夠大,不比 LoadDisplayImage 的結果模糊。</summary>
+        Friend Shared Function LoadEmbeddedThumbnail(ByVal path As String, ByVal box As Size, ByRef realSize As Size, ByRef sharp As Boolean) As Image
+            sharp = False
+            Try
+                Using fs As New FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)
+                    Using original As Image = Image.FromStream(fs, False, False)
+                        If Array.IndexOf(original.PropertyIdList, ExifThumbnailTag) < 0 Then Return Nothing
+                        Dim data As Byte() = original.GetPropertyItem(ExifThumbnailTag).Value
+                        Using ms As New MemoryStream(data)
+                            Using thumb As Image = Image.FromStream(ms)
+                                Dim realAspect As Double = original.Width / CDbl(original.Height)
+                                If Math.Abs(thumb.Width / CDbl(thumb.Height) - realAspect) > realAspect * 0.03 Then Return Nothing
+                                Dim scale As Double = Math.Min(1.0, Math.Min(box.Width / CDbl(original.Width), box.Height / CDbl(original.Height)))
+                                Dim w As Integer = Math.Max(1, CInt(original.Width * scale)), h As Integer = Math.Max(1, CInt(original.Height * scale))
+                                sharp = thumb.Width >= w AndAlso thumb.Height >= h
+                                If Not sharp Then w = thumb.Width : h = thumb.Height   ' 不放大:Zoom 版面顯示時再拉大
+                                Dim bmp As New Bitmap(w, h)
+                                Using g As Graphics = Graphics.FromImage(bmp)
+                                    g.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+                                    g.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
+                                    g.DrawImage(thumb, 0, 0, w, h)
+                                End Using
+                                realSize = original.Size
+                                Return bmp
+                            End Using
+                        End Using
+                    End Using
+                End Using
+            Catch ex As Exception When TypeOf ex Is ArgumentException OrElse TypeOf ex Is OutOfMemoryException OrElse
+                                   TypeOf ex Is IOException OrElse TypeOf ex Is UnauthorizedAccessException OrElse
+                                   TypeOf ex Is Runtime.InteropServices.ExternalException
+                sharp = False
+                Return Nothing
+            End Try
+        End Function
+
         ' 控制項放大(例如縮圖大小滑桿)後,縮小版不夠清楚 → 停止調整 300ms 後從檔案重新產生
         Private WithEvents _regrowTimer As New Timer With {.Interval = 300}
 

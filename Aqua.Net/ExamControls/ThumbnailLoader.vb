@@ -12,11 +12,16 @@ Namespace Global.Aqua
     ''' Background thumbnail loading for MediaList (MediaViewerControl.LoadAsynchronously):
     '''   - decoding runs on two background threads, never on the UI thread, so scrolling doesn't stall;
     '''     the result is handed back with BeginInvoke;
+    '''   - a photo with an embedded EXIF thumbnail shows that first (about 1ms instead of 50ms or more for
+    '''     decoding the photo); when it is smaller than the box, the full decode follows after every
+    '''     quick one waiting (the end of the queue), so a screenful appears at once and then sharpens;
     '''   - newest request first (what just scrolled into view), and a request whose control has moved
     '''     on (scrolled away, another file) is skipped when its turn comes;
     '''   - the decoded thumbnails are kept in an LRU cache with a byte budget, so scrolling back shows
     '''     them at once while memory stays bounded (the controls themselves drop theirs when they
-    '''     scroll out of view). The key holds the file's last-write time: a saved edit is decoded anew.
+    '''     scroll out of view). The key holds the file's last-write time: a saved edit is decoded anew;
+    '''   - with ThumbnailDiskCache.Folder set, the decoded ones are kept on disk too, and read from there the
+    '''     next time (also after a restart) before anything is decoded.
     ''' The cache owns its bitmaps; every control gets its own copy.
     ''' Workers are STA: video thumbnails come from the shell (COM).
     ''' </summary>
@@ -31,6 +36,7 @@ Namespace Global.Aqua
             Public Box As Size
             Public Video As Boolean
             Public Generation As Integer
+            Public Sharp As Boolean      ' the full decode after an embedded thumbnail that was too small
         End Class
 
         Private Class Entry
@@ -106,19 +112,44 @@ Namespace Global.Aqua
             Dim realSize As Size
             Dim copy As Bitmap = TryGetCached(r.Path, r.Box, realSize)   ' an identical request may have filled it
             If copy Is Nothing Then
-                Dim bmp As Bitmap
-                If r.Video Then
-                    bmp = ShellThumbnail.GetThumbnail(r.Path, r.Box.Width, r.Box.Height)
-                    If bmp IsNot Nothing Then realSize = bmp.Size
-                Else
-                    bmp = TryCast(MediaViewerControl.LoadDisplayImage(r.Path, r.Box, realSize), Bitmap)
+                ' kept on disk from an earlier time (ThumbnailDiskCache)? a sharp request has looked already
+                Dim bmp As Bitmap = If(r.Sharp, Nothing, ThumbnailDiskCache.TryRead(r.Path, r.Box, realSize))
+                If bmp Is Nothing Then
+                    Dim keepOnDisk As Boolean = True   ' not an embedded thumbnail: that one is as quick to read again
+                    If r.Video Then
+                        bmp = ShellThumbnail.GetThumbnail(r.Path, r.Box.Width, r.Box.Height)
+                        If bmp IsNot Nothing Then realSize = bmp.Size
+                    Else
+                        If Not r.Sharp Then
+                            Dim sharp As Boolean
+                            bmp = TryCast(MediaViewerControl.LoadEmbeddedThumbnail(r.Path, r.Box, realSize, sharp), Bitmap)
+                            If bmp IsNot Nothing AndAlso Not sharp Then
+                                ' not cached: the cache holds what stays; this one is replaced in a moment
+                                Deliver(r, bmp, realSize)
+                                SyncLock _sync
+                                    _queue.AddLast(New Request With {.Owner = r.Owner, .Path = r.Path, .Box = r.Box, .Generation = r.Generation, .Sharp = True})
+                                    Monitor.Pulse(_sync)
+                                End SyncLock
+                                Return
+                            End If
+                            keepOnDisk = bmp Is Nothing
+                        End If
+                        If bmp Is Nothing Then bmp = TryCast(MediaViewerControl.LoadDisplayImage(r.Path, r.Box, realSize), Bitmap)
+                    End If
+                    If bmp Is Nothing Then Return
+                    If keepOnDisk Then ThumbnailDiskCache.Write(r.Path, r.Box, bmp, realSize)   ' before the memory cache shares it
                 End If
-                If bmp Is Nothing Then Return
                 SyncLock _sync
                     AddToCache(CacheKey(r.Path, r.Box), bmp, realSize)
                     copy = New Bitmap(bmp)
                 End SyncLock
             End If
+            Deliver(r, copy, realSize)
+        End Sub
+
+        ''' <summary>Hands <paramref name="copy"/> to the control on the UI thread (or disposes it when the
+        ''' request is no longer current).</summary>
+        Private Shared Sub Deliver(ByVal r As Request, ByVal copy As Bitmap, ByVal realSize As Size)
             If Not r.Owner.IsCurrentLoad(r.Generation) OrElse Not r.Owner.IsHandleCreated Then
                 copy.Dispose()
                 Return
