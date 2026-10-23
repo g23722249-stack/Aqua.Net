@@ -25,7 +25,6 @@ Partial Class MediaItem
     '請勿使用程式碼編輯器進行修改。
     <System.Diagnostics.DebuggerStepThrough()> _
     Private Sub InitializeComponent()
-        Dim resources As System.ComponentModel.ComponentResourceManager = New System.ComponentModel.ComponentResourceManager(GetType(MediaItem))
         Me.pnlBottom = New System.Windows.Forms.Panel()
         Me.MediaViewerControl1 = New Aqua.MediaViewerControl()
         Me.RatingControl1 = New Aqua.RatingControl()
@@ -72,10 +71,10 @@ Partial Class MediaItem
         Me.ImageCheckBox1.BackColor = System.Drawing.Color.Transparent
         Me.ImageCheckBox1.Checked = False
         Me.ImageCheckBox1.Dock = System.Windows.Forms.DockStyle.Left
-        Me.ImageCheckBox1.ImageCheckDisabled = CType(resources.GetObject("ImageCheckBox1.ImageCheckDisabled"), System.Drawing.Image)
-        Me.ImageCheckBox1.ImageChecked = CType(resources.GetObject("ImageCheckBox1.ImageChecked"), System.Drawing.Image)
-        Me.ImageCheckBox1.ImageUnCheckDisabled = CType(resources.GetObject("ImageCheckBox1.ImageUnCheckDisabled"), System.Drawing.Image)
-        Me.ImageCheckBox1.ImageUnChecked = CType(resources.GetObject("ImageCheckBox1.ImageUnChecked"), System.Drawing.Image)
+        Me.ImageCheckBox1.ImageCheckDisabled = SharedResourceImage("ImageCheckBox1.ImageCheckDisabled")
+        Me.ImageCheckBox1.ImageChecked = SharedResourceImage("ImageCheckBox1.ImageChecked")
+        Me.ImageCheckBox1.ImageUnCheckDisabled = SharedResourceImage("ImageCheckBox1.ImageUnCheckDisabled")
+        Me.ImageCheckBox1.ImageUnChecked = SharedResourceImage("ImageCheckBox1.ImageUnChecked")
         Me.ImageCheckBox1.Location = New System.Drawing.Point(5, 0)
         Me.ImageCheckBox1.Margin = New System.Windows.Forms.Padding(0, 3, 3, 3)
         Me.ImageCheckBox1.Name = "ImageCheckBox1"

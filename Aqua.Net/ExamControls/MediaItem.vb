@@ -32,6 +32,24 @@ Partial Public Class MediaItem
     Friend Const BottomPanelHeight As Integer = 27   ' pnlBottom 在 MediaItem.Designer.vb 的高度
     Private _selected As Boolean = False
 
+    ' MediaItem.resx 的核取方塊圖片,所有項目共用同一份:以前每個項目各自用資源管理員重新讀取、解碼
+    ' 這四張圖,佔建立一個項目一半以上的時間(清單一次加入上千個)。CheckBox 只拿來畫,不會改也不會釋放。
+    Private Shared ReadOnly _sharedImages As New Dictionary(Of String, Image)
+    Private Shared _resources As ComponentResourceManager
+
+    ''' <summary>MediaItem.resx 的圖片 <paramref name="name"/>,每個項目拿到同一個物件(InitializeComponent 用)。</summary>
+    Private Shared Function SharedResourceImage(ByVal name As String) As Image
+        SyncLock _sharedImages
+            Dim img As Image = Nothing
+            If Not _sharedImages.TryGetValue(name, img) Then
+                If _resources Is Nothing Then _resources = New ComponentResourceManager(GetType(MediaItem))
+                img = CType(_resources.GetObject(name), Image)
+                _sharedImages(name) = img
+            End If
+            Return img
+        End SyncLock
+    End Function
+
     Public Sub New()
         InitializeComponent()
 
