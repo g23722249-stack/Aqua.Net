@@ -255,8 +255,10 @@ Public Class MediaList
     Public Function PreFilterMessage(ByRef m As Message) As Boolean Implements IMessageFilter.PreFilterMessage
         Const WM_MOUSEWHEEL As Integer = &H20A
         If m.Msg = WM_MOUSEWHEEL AndAlso Me.Visible AndAlso _viewport.IsHandleCreated Then
-            Dim lp As Integer = m.LParam.ToInt32()
-            Dim pt As New Point(SignedLoWord(lp), SignedLoWord(lp >> 16))
+            ' the low 32 bits only: in a 64-bit process LParam.ToInt32 overflows when y is negative (a screen
+            ' above the main one), as the coordinates fill the low half without sign extension
+            Dim lp As Long = m.LParam.ToInt64()
+            Dim pt As New Point(SignedLoWord(CInt(lp And &HFFFF)), SignedLoWord(CInt((lp >> 16) And &HFFFF)))
             If _viewport.ClientRectangle.Contains(_viewport.PointToClient(pt)) Then
                 Dim delta As Integer = SignedLoWord(CInt((m.WParam.ToInt64() >> 16) And &HFFFF))
                 OnWheelDelta(delta)
