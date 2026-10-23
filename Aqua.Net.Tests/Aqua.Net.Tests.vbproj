@@ -30,7 +30,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Aqua.Net\Aqua.Net.vbproj" />
-    <!-- frmARichEditDemo 的 PDF 匯入示範用到 Unimax.DocumentConvert(非移植控制項,不與 Aqua.Net 撞名)。 -->
   </ItemGroup>
 
 </Project>

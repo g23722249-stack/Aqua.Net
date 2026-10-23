@@ -7,7 +7,7 @@ Public Class RatingContextMenuDemo
     Inherits Form
 
     Private WithEvents starMenu As New RatingContextMenu()   ' 5 顆星，可改成 New RatingContextMenu(10)
-    Private ReadOnly lblResult As New Label()
+    Private ReadOnly lblResult As New System.Windows.Forms.Label()
     Private ReadOnly target As New Panel()
 
     Public Sub New()
@@ -29,7 +29,7 @@ Public Class RatingContextMenuDemo
         target.BorderStyle = BorderStyle.FixedSingle
         target.ContextMenuStrip = starMenu
 
-        Dim hint As New Label() With {
+        Dim hint As New System.Windows.Forms.Label() With {
             .Text = "在此區域按右鍵，點選星星評分",
             .Dock = DockStyle.Fill,
             .TextAlign = ContentAlignment.MiddleCenter

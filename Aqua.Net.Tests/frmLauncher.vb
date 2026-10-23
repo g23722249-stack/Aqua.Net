@@ -27,7 +27,7 @@ Public Class frmLauncher
                     Function() CType(New RatingContextMenuDemo(), Form), y)
 
         ' --- Button / CheckBox / RadioButton(影像式)就地示範 ---
-        Dim lbl As New Label() With {
+        Dim lbl As New System.Windows.Forms.Label() With {
             .Text = "Button / CheckBox / RadioButton 示範:",
             .Location = New Point(16, y + 8), .AutoSize = True}
         Controls.Add(lbl)
