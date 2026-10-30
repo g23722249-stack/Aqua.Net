@@ -1209,6 +1209,26 @@ Public Class MediaList
         Return _sections.Values(sectionIndex)
     End Function
 
+    ''' <summary>目前版面下,照片與影片縮圖的產生尺寸(ThumbnailDiskCache 以此為鍵,重建快取用)。
+    ''' 有顯示中的項目時取它的;清單是空的也照目前的格子大小算(暫時的項目套上同樣的設定與大小)。</summary>
+    Public Function CurrentThumbnailBoxes() As (Image As Size, Video As Size)
+        For Each it As MediaItem In _items
+            If it.Parent Is _viewport Then
+                Return (it.MediaViewerControl1.ThumbnailBox(video:=False), it.MediaViewerControl1.ThumbnailBox(video:=True))
+            End If
+        Next
+        Dim rc As Rectangle = CellBounds(0, ComputePerLine())
+        If rc.Width <= 0 OrElse rc.Height <= 0 Then Return (Size.Empty, Size.Empty)
+        Using probe As New MediaItem()
+            probe.ShowRating = _showRating
+            probe.ShowCheckBox = _showCheckBox
+            ApplyListSettings(probe)
+            probe.Size = rc.Size
+            probe.PerformLayout()
+            Return (probe.MediaViewerControl1.ThumbnailBox(video:=False), probe.MediaViewerControl1.ThumbnailBox(video:=True))
+        End Using
+    End Function
+
     ''' <summary>第 sectionIndex 段第一個項目的索引。</summary>
     Public Function SectionFirstIndex(ByVal sectionIndex As Integer) As Integer
         Return _sections.Keys(sectionIndex)

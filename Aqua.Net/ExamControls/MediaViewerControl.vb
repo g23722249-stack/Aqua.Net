@@ -29,8 +29,8 @@ Public Class MediaViewerControl
     Private Shared _vlcTask As System.Threading.Tasks.Task(Of LibVLCSharp.Shared.LibVLC)
 
     ' 影片副檔名
-    Private Shared ReadOnly ImageExts As String() = {".jpg", ".jpeg", ".png", ".bmp", ".gif"}
-    Private Shared ReadOnly VideoExts As String() = {".mp4", ".avi", ".mov", ".mpg", ".mpeg", ".wmv",
+    Friend Shared ReadOnly ImageExts As String() = {".jpg", ".jpeg", ".png", ".bmp", ".gif"}
+    Friend Shared ReadOnly VideoExts As String() = {".mp4", ".avi", ".mov", ".mpg", ".mpeg", ".wmv",
                                                      ".dat", ".rm", ".m2p", ".divx", ".3gp", ".m2ts", ".asf", ".mkv"}
 
     ''' <summary>點擊媒體時觸發，參數帶出目前檔名。</summary>
@@ -184,8 +184,13 @@ Public Class MediaViewerControl
             End Set
         End Property
 
+        ''' <summary>The size this control asks the thumbnail of a photo or a video in (the disk cache keys by it).</summary>
+        Friend Function ThumbnailBox(ByVal video As Boolean) As Size
+            Return If(video, New Size(Math.Max(1, Me.Width), Math.Max(1, Me.Height)), DisplayBox())
+        End Function
+
         Private Sub RequestThumbnail(ByVal video As Boolean)
-            Dim box As Size = If(video, New Size(Math.Max(1, Me.Width), Math.Max(1, Me.Height)), DisplayBox())
+            Dim box As Size = ThumbnailBox(video)
             Dim real As Size
             Dim cached As Bitmap = ThumbnailLoader.TryGetCached(_fileName, box, real)
             If cached IsNot Nothing Then

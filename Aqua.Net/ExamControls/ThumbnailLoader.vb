@@ -137,7 +137,7 @@ Namespace Global.Aqua
                         If bmp Is Nothing Then bmp = TryCast(MediaViewerControl.LoadDisplayImage(r.Path, r.Box, realSize), Bitmap)
                     End If
                     If bmp Is Nothing Then Return
-                    If keepOnDisk Then ThumbnailDiskCache.Write(r.Path, r.Box, bmp, realSize)   ' before the memory cache shares it
+                    If keepOnDisk Then ThumbnailDiskCache.Write(r.Path, r.Box, bmp, realSize, r.Video)   ' before the memory cache shares it
                 End If
                 SyncLock _sync
                     AddToCache(CacheKey(r.Path, r.Box), bmp, realSize)
