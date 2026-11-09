@@ -113,14 +113,16 @@ Namespace Global.Aqua
             Dim copy As Bitmap = TryGetCached(r.Path, r.Box, realSize)   ' an identical request may have filled it
             If copy Is Nothing Then
                 ' kept on disk from an earlier time (ThumbnailDiskCache)? a sharp request has looked already
-                Dim bmp As Bitmap = If(r.Sharp, Nothing, ThumbnailDiskCache.TryRead(r.Path, r.Box, realSize))
+                ' a picture the program provides (MediaViewerControl.ProvidedPicture) never goes to disk
+                Dim provided As Boolean = MediaViewerControl.IsProvidedPicture(r.Path)
+                Dim bmp As Bitmap = If(r.Sharp OrElse provided, Nothing, ThumbnailDiskCache.TryRead(r.Path, r.Box, realSize))
                 If bmp Is Nothing Then
-                    Dim keepOnDisk As Boolean = True   ' not an embedded thumbnail: that one is as quick to read again
+                    Dim keepOnDisk As Boolean = Not provided   ' not an embedded thumbnail: that one is as quick to read again
                     If r.Video Then
                         bmp = ShellThumbnail.GetThumbnail(r.Path, r.Box.Width, r.Box.Height)
                         If bmp IsNot Nothing Then realSize = bmp.Size
                     Else
-                        If Not r.Sharp Then
+                        If Not r.Sharp AndAlso Not provided Then
                             Dim sharp As Boolean
                             bmp = TryCast(MediaViewerControl.LoadEmbeddedThumbnail(r.Path, r.Box, realSize, sharp), Bitmap)
                             If bmp IsNot Nothing AndAlso Not sharp Then
@@ -132,7 +134,7 @@ Namespace Global.Aqua
                                 End SyncLock
                                 Return
                             End If
-                            keepOnDisk = bmp Is Nothing
+                            keepOnDisk = bmp Is Nothing AndAlso Not provided
                         End If
                         If bmp Is Nothing Then bmp = TryCast(MediaViewerControl.LoadDisplayImage(r.Path, r.Box, realSize), Bitmap)
                     End If
@@ -160,6 +162,20 @@ Namespace Global.Aqua
             Catch ex As Exception When TypeOf ex Is InvalidOperationException OrElse TypeOf ex Is ObjectDisposedException
                 copy.Dispose()   ' its window went away in the meantime
             End Try
+        End Sub
+
+        ''' <summary>Drops the cached thumbnails of the files <paramref name="which"/> picks.</summary>
+        Public Shared Sub Forget(ByVal which As Func(Of String, Boolean))
+            SyncLock _sync
+                For Each key In _cache.Keys.ToList()
+                    If Not which(key.Substring(0, key.IndexOf("|"c))) Then Continue For
+                    Dim node As LinkedListNode(Of KeyValuePair(Of String, Entry)) = _cache(key)
+                    _lru.Remove(node)
+                    _cache.Remove(key)
+                    _cacheBytes -= node.Value.Value.Bytes
+                    node.Value.Value.Bitmap.Dispose()
+                Next
+            End SyncLock
         End Sub
 
         ' caller holds _sync

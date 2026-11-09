@@ -208,6 +208,43 @@ Namespace Global.Aqua
             Return result
         End Function
 
+        ''' <summary>Removes from <paramref name="cacheFolder"/> every entry of <paramref name="files"/> (any size,
+        ''' any version of the file): a photo that must leave no picture behind (encrypted, say). Reads each
+        ''' entry's header: call it on a worker thread. The number removed.</summary>
+        Public Shared Function RemoveFiles(ByVal cacheFolder As String, ByVal files As IEnumerable(Of String),
+                                           Optional ByVal cancel As CancellationToken = Nothing) As Integer
+            Dim wanted As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+            For Each f In files
+                Try
+                    If Not String.IsNullOrEmpty(f) Then wanted.Add(IO.Path.GetFullPath(f))
+                Catch ex As Exception When IsCacheError(ex)
+                End Try
+            Next
+            If wanted.Count = 0 Then Return 0
+            Dim removed As Integer = 0
+            Dim root As String = If(String.IsNullOrEmpty(cacheFolder), "", IO.Path.GetFullPath(cacheFolder))
+            For Each f As FileInfo In Entries(cacheFolder)
+                If cancel.IsCancellationRequested Then Exit For
+                Try
+                    Dim head(4095 + 64) As Byte
+                    Dim n As Integer
+                    Using fs As New FileStream(f.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)
+                        n = fs.Read(head, 0, head.Length)
+                    End Using
+                    If n <= 0 Then Continue For
+                    ReDim Preserve head(n - 1)
+                    Dim h As EntryHeader
+                    If Not TryHeader(head, h) OrElse h.Name Is Nothing Then Continue For
+                    Dim media As String = If(IO.Path.IsPathRooted(h.Name), h.Name, IO.Path.GetFullPath(IO.Path.Combine(root, h.Name)))
+                    If Not wanted.Contains(media) Then Continue For
+                    f.Delete()
+                    removed += 1
+                Catch ex As Exception When IsCacheError(ex)
+                End Try
+            Next
+            Return removed
+        End Function
+
         ''' <summary>What Fill did.</summary>
         Public Class FillResult
             Public Made As Integer

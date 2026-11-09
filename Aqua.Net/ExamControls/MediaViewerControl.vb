@@ -33,6 +33,34 @@ Public Class MediaViewerControl
     Friend Shared ReadOnly VideoExts As String() = {".mp4", ".avi", ".mov", ".mpg", ".mpeg", ".wmv",
                                                      ".dat", ".rm", ".m2p", ".divx", ".3gp", ".m2ts", ".asf", ".mkv"}
 
+    ''' <summary>程式提供的圖片來源:副檔名不是圖片、也不是影片的檔案(例如加密的檔案),交給它取得圖片的
+    ''' 內容(解密後的 JPEG / PNG 位元組);傳回 Nothing 表示不提供(項目空白)。這類檔案當作圖片顯示,
+    ''' 縮圖不寫入、也不讀取磁碟快取(ThumbnailDiskCache),只留在記憶體;ForgetProvidedThumbnails 清除。
+    ''' 呼叫可能來自背景執行緒。</summary>
+    Public Shared Property ProvidedPicture As Func(Of String, Stream)
+
+    ''' <summary>這個檔案的圖片由 ProvidedPicture 提供。</summary>
+    Public Shared Function IsProvidedPicture(ByVal path As String) As Boolean
+        If ProvidedPicture Is Nothing OrElse String.IsNullOrEmpty(path) Then Return False
+        Dim ext As String = IO.Path.GetExtension(path).ToLowerInvariant()
+        Return ext <> "" AndAlso Array.IndexOf(ImageExts, ext) < 0 AndAlso Array.IndexOf(VideoExts, ext) < 0
+    End Function
+
+    ''' <summary>記憶體快取中 ProvidedPicture 提供的縮圖全部丟掉(例如加密照片再次上鎖時)。</summary>
+    Public Shared Sub ForgetProvidedThumbnails()
+        ThumbnailLoader.Forget(AddressOf IsProvidedPicture)
+    End Sub
+
+    ' 圖片內容:程式提供的,或檔案本身(讀取時不鎖住檔案)
+    Private Shared Function OpenPicture(ByVal path As String) As Stream
+        If IsProvidedPicture(path) Then
+            Dim s As Stream = ProvidedPicture(path)
+            If s Is Nothing Then Throw New IOException("no picture provided")
+            Return s
+        End If
+        Return New FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)
+    End Function
+
     ''' <summary>點擊媒體時觸發，參數帶出目前檔名。</summary>
     Public Event MediaClicked As EventHandler(Of MediaClickedEventArgs)
 
@@ -136,7 +164,7 @@ Public Class MediaViewerControl
             End If
 
             Dim ext As String = Path.GetExtension(_fileName).ToLower()
-            If Array.IndexOf(ImageExts, ext) >= 0 Then
+            If Array.IndexOf(ImageExts, ext) >= 0 OrElse IsProvidedPicture(_fileName) Then
                 ' 圖片顯示:只保留「符合控制項大小」的縮小版(原始尺寸記在 RealSize)。
                 ' 以前整張原圖(外加一份 _thumb 複本)留在記憶體,一個相簿幾十張大照片就會把
                 ' 32 位元程式的記憶體耗盡,後面的縮圖載入失敗而空白。控制項放大時再重新產生(見 OnSizeChanged)。
@@ -247,7 +275,7 @@ Public Class MediaViewerControl
         ''' <paramref name="realSize"/> 傳回原始尺寸。讀不到(檔案損壞、記憶體不足)時傳回 Nothing。</summary>
         Friend Shared Function LoadDisplayImage(ByVal path As String, ByVal box As Size, ByRef realSize As Size) As Image
             Try
-                Using fs As New FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)
+                Using fs As Stream = OpenPicture(path)
                     Using original As Image = Image.FromStream(fs, False, False)
                         realSize = original.Size
                         Dim scale As Double = Math.Min(1.0, Math.Min(box.Width / CDbl(original.Width), box.Height / CDbl(original.Height)))
@@ -276,7 +304,7 @@ Public Class MediaViewerControl
         Friend Shared Function LoadEmbeddedThumbnail(ByVal path As String, ByVal box As Size, ByRef realSize As Size, ByRef sharp As Boolean) As Image
             sharp = False
             Try
-                Using fs As New FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)
+                Using fs As Stream = OpenPicture(path)
                     Using original As Image = Image.FromStream(fs, False, False)
                         If Array.IndexOf(original.PropertyIdList, ExifThumbnailTag) < 0 Then Return Nothing
                         Dim data As Byte() = original.GetPropertyItem(ExifThumbnailTag).Value
