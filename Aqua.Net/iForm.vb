@@ -439,7 +439,14 @@ Namespace Global.Aqua
                 _backBuffer = New Bitmap(Width, Height)
             End If
 
+            ' Only the part asked for: a transparent child (Label, ...) paints its background through here
+            ' with just its own rectangle, and redrawing and copying the whole window for each one made
+            ' every such repaint cost ~20 ms on a 1920x1080 window (a panel of 40 enabled/disabled: seconds).
+            Dim clip As Rectangle = Rectangle.Intersect(e.ClipRectangle, New Rectangle(0, 0, Width, Height))
+            If clip.IsEmpty Then Return
+
             Using g As Graphics = Graphics.FromImage(_backBuffer)
+                g.SetClip(clip)
                 Dim active As Boolean = ContainsFocus OrElse Focused
 
                 DrawTitleBar(g, active)
@@ -451,7 +458,7 @@ Namespace Global.Aqua
                 End If
             End Using
 
-            e.Graphics.DrawImageUnscaled(_backBuffer, Point.Empty)
+            e.Graphics.DrawImage(_backBuffer, clip, clip, GraphicsUnit.Pixel)
         End Sub
 
         Private Sub DrawTitleBar(ByVal g As Graphics, ByVal active As Boolean)
